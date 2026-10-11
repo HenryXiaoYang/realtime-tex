@@ -129,6 +129,9 @@ jobs:
     # Windows with MiKTeX instead of TeX Live: a session with live edits in paths with spaces,
     # non-ASCII characters and a CRLF document (realtime-tex-vsc-plugin#1)
     runs-on: windows-latest
+    env:
+      # one known-good mirror instead of a random one per download (timeouts broke this job)
+      MIKTEX_REPOSITORY: https://mirror.clarkson.edu/ctan/systems/win32/miktex/tm/packages/
     defaults:
       run:
         shell: bash
@@ -139,20 +142,33 @@ jobs:
       - name: Install MiKTeX
         shell: pwsh
         run: |
-          # the installer downloads from a random CTAN mirror, which sometimes times out
+          # miktexsetup: download the basic package set from the pinned mirror (retried), then
+          # install it from that local copy
+          $work = "$env:RUNNER_TEMP\miktex"
+          New-Item -ItemType Directory -Force $work | Out-Null
+          Invoke-WebRequest https://miktex.org/download/win/miktexsetup-x64.zip -OutFile "$work\setup.zip" -MaximumRetryCount 3 -RetryIntervalSec 10
+          Expand-Archive "$work\setup.zip" -DestinationPath $work -Force
+          $setup = (Get-ChildItem $work -Filter miktexsetup_standalone.exe -Recurse | Select-Object -First 1).FullName
           foreach ($i in 1..3) {
-            choco install miktex --no-progress -y
+            & $setup --verbose --remote-package-repository=$env:MIKTEX_REPOSITORY --local-package-repository="$work\repo" --package-set=basic download
             if ($LASTEXITCODE -eq 0) { break }
             if ($i -eq 3) { exit 1 }
-            choco uninstall miktex miktex.install -y | Out-Null
             Start-Sleep -Seconds 20
           }
+          & $setup --verbose --local-package-repository="$work\repo" --package-set=basic --shared=yes --modify-path=no install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           $bin = "C:\Program Files\MiKTeX\miktex\bin\x64"
           & "$bin\initexmf.exe" --admin --set-config-value "[MPM]AutoInstall=1"
           & "$bin\initexmf.exe" --set-config-value "[MPM]AutoInstall=1"
           & "$bin\miktex.exe" --admin packages update-package-database
+          # what the live engine and the test document need, each retried on a download timeout
           foreach ($p in "luatexbase","ctablestack","luaotfload","lualibs","lm") {
-            & "$bin\miktex.exe" --admin packages install $p
+            foreach ($i in 1..3) {
+              $out = & "$bin\miktex.exe" --admin packages install $p 2>&1 | Out-String
+              if ($LASTEXITCODE -eq 0 -or $out -match "already installed") { break }
+              if ($i -eq 3) { Write-Output $out; Write-Error "could not install $p"; exit 1 }
+              Start-Sleep -Seconds 10
+            }
           }
           & "$bin\initexmf.exe" --admin --update-fndb
           & "$bin\initexmf.exe" --update-fndb
@@ -162,7 +178,8 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/warm" && cd "$RUNNER_TEMP/warm"
           printf '%s\n' '\documentclass{article}' '\begin{document}' 'x' '\end{document}' > w.tex
-          lualatex -interaction=nonstopmode w.tex > /dev/null || (tail -40 w.log; exit 1)
+          lualatex -interaction=nonstopmode w.tex > /dev/null || lualatex -interaction=nonstopmode w.tex > /dev/null \
+            || { tail -40 w.log 2>/dev/null; cat "$LOCALAPPDATA/MiKTeX/miktex/log/lualatex.log" 2>/dev/null | tail -40; exit 1; }
       - name: Live engine in odd paths (spaces, non-ASCII, CRLF)
         run: cargo test --release -p rtex-core --test paths -- --nocapture
 
