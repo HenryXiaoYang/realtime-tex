@@ -1,21 +1,29 @@
 # Changelog
 
-## Unreleased
+## 0.0.3 (2026-10-11)
 
-- **Fixed: live typing on Windows with MiKTeX.** The live engine exited at startup with
+### Fixed
+
+- **Live typing on Windows with MiKTeX.** The live engine exited at startup with
   "exit code: 1" on every MiKTeX installation (realtime-tex-vsc-plugin#1): MiKTeX refuses to
   let LuaTeX write outside the output directory, which includes the engine's response pipe.
   rtex now sets `MIKTEX_ALLOWUNSAFEOUTPUTFILES=1` for the LuaLaTeX processes it starts, the
-  MiKTeX equivalent of the `openout_any=a` it already sets for TeX Live. A failed start now
-  reports the first TeX or Lua error from the engine's log. CI runs a live-editing session on
-  Windows with MiKTeX, in paths with spaces and non-ASCII characters and on a CRLF document.
+  MiKTeX equivalent of the `openout_any=a` it already sets for TeX Live.
+- When the live engine cannot start, the error quotes the first TeX or Lua error from its log
+  instead of only the exit code.
+
+### New
 
 - **Prebuilt binaries** for Linux (x86_64, arm64), macOS (Apple silicon, Intel) and Windows
   (x86_64), attached to each release by CI. Each holds `rtex`, the shared C library, `rtex.h`
-  and the support files. The binaries for 0.0.2 are built from this branch, which differs from
-  the tag only in packaging, docs and benchmarks.
+  and the support files.
 - `rtex` finds its support files next to its executable (`share/rtex/tex`), so an unpacked
   archive works from anywhere. `rtex doctor` checks the installation.
+
+### CI and repository
+
+- A job runs a live-editing session on Windows with MiKTeX, in paths with spaces and non-ASCII
+  characters and on a CRLF document.
 - GitHub counts the project as Rust: fixtures, benchmarks and the TeX/Lua files are marked as
   vendored for language statistics.
 
