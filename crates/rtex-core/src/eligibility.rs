@@ -1618,7 +1618,8 @@ fn user_macro_definitions(text: &str) -> Vec<(String, usize, String)> {
     out
 }
 
-/// Strip `%` comments (respecting `\%`).
+/// Strip `%` comments (respecting `\%`). Like TeX, a comment also removes the end of its
+/// line, so comment-only lines inside a paragraph do not leave a blank line behind.
 pub fn strip_comments(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
     for line in src.lines() {
@@ -1657,7 +1658,9 @@ pub fn strip_comments(src: &str) -> String {
             i += 1;
         }
         out.push_str(&line[..cut]);
-        out.push('\n');
+        if cut == line.len() {
+            out.push('\n');
+        }
     }
     out
 }
@@ -2720,6 +2723,16 @@ mod tests {
         assert!(reasons("one\n\ntwo").contains(&Reason::ParagraphBreak));
         // an explicit \par is fine: a span may hold several consecutive paragraphs (one unit)
         assert!(!reasons("a \\par b").contains(&Reason::ParagraphBreak));
+        // comment lines are not blank lines: `%` also removes the end of its line
+        for src in [
+            "% one\n% two\nHello world.\nMore.",
+            "Hello world.\n% one\nMore.",
+            "Hello world.\n% one\n% two\nMore.",
+            "Hello % note\n% two\nworld.",
+        ] {
+            assert!(!reasons(src).contains(&Reason::ParagraphBreak), "{src:?}");
+        }
+        assert!(reasons("one\n% c\n\ntwo").contains(&Reason::ParagraphBreak));
         let r = reasons("{\\Large\\bfseries Title\\par}\nName \\hfill 22 September 2026");
         assert!(r.is_empty(), "{r:?}");
         assert!(!ok("a \\parbox-like? no: \\parskip is disallowed"));

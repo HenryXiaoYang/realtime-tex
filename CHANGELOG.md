@@ -8,6 +8,9 @@
   `(LaTeX)`/`(<package>)` continuation lines. Before, only the first line came through, so
   an error such as "Mismatched LaTeX support files detected" lost the lines that say which
   versions do not match (#1).
+- Comment lines inside or right above a paragraph no longer send its edits to the background
+  pass. rtex read two `%` lines in a row as a blank line (a paragraph break); like TeX, it now
+  drops the end of a commented line too (#3).
 
 ## 0.0.3 (2026-10-11)
 
