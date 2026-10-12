@@ -5,7 +5,7 @@ rules, images and colour changes. It is read straight from LuaTeX's internal box
 going through a PDF, and it places every glyph exactly where LuaTeX's own PDF writer puts it
 ([correctness.md](correctness.md)).
 
-Format revision: **1** (rtex 0.0.3). The revision is in the header, and readers must skip
+Format revision: **1** (rtex 0.0.4). The revision is in the header, and readers must skip
 record types they do not know.
 
 ## Coordinates and units

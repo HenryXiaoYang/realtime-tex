@@ -1,7 +1,7 @@
 %% rtex-capture.sty — record unit/paragraph contexts, row placements and page display lists
 %% during a normal LuaLaTeX run. Adds no nodes; output is unchanged (verified by tests).
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{rtex-capture}[2026/10/11 v0.0.3 rtex layout capture]
+\ProvidesPackage{rtex-capture}[2026/10/12 v0.0.4 rtex layout capture]
 \RequirePackage{luatexbase}
 \directlua{
   rtex_capture = dofile(kpse.find_file("rtex-capture.lua", "lua") or "rtex-capture.lua")

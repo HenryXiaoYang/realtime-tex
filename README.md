@@ -131,7 +131,7 @@ LuaLaTeX is supported (not pdfLaTeX or XeLaTeX), with a LaTeX kernel from 2021 o
 
 ## Status
 
-Version 0.0.3. It works and is tested, but the API, the C ABI and the display-list format may
+Version 0.0.4. It works and is tested, but the API, the C ABI and the display-list format may
 still change before 0.1.
 
 ## License

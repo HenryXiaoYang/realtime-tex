@@ -1,4 +1,4 @@
-/* rtex — embeddable real-time LuaTeX compilation library. C ABI, rtex 0.0.3 (unstable before 0.1).
+/* rtex — embeddable real-time LuaTeX compilation library. C ABI, rtex 0.0.4 (unstable before 0.1).
  * Strings are UTF-8. Strings returned as `char*` are owned by the caller and must be released
  * with rtex_string_free(); `const char*` results are owned by the object they came from.
  * Display lists are binary (encoding revision 1) buffers (docs/display-list.md) owned by the event. */

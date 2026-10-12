@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/rtex-dl", "crates/rtex-core", "crates/rtex-cli", "crates/rtex-verify"]
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/HenryXiaoYang/realtime-tex"
