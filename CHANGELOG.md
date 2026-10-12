@@ -28,6 +28,10 @@
 - A file `\input` in the preamble (a macro file, say) is loaded once by the live engine. It
   was also read again as document setup, so every engine start logged "Command ... already
   defined" for each of its macros.
+- `\mathbf` after `\bm` (fontspec documents) is right in the live engine. Its memoized math
+  font setup kept the bold math version's alphabets when math returned to the normal version,
+  so `\mathbf{M}` came out in the wrong font. After a footnote, TeX could even loop on it until
+  the engine stopped, and the paragraph was not live again until the preamble changed.
 
 ## 0.0.3 (2026-10-11)
 

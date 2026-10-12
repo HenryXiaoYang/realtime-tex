@@ -22,6 +22,26 @@ fn setup(name: &str) -> Option<(TexLive, std::path::PathBuf, std::path::PathBuf)
     Some((tl, root, project))
 }
 
+/// A project whose `main.tex` is `main`.
+fn setup_document(
+    name: &str,
+    main: &str,
+) -> Option<(TexLive, std::path::PathBuf, std::path::PathBuf)> {
+    let tl = match TexLive::discover() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("SKIP: {e}");
+            return None;
+        }
+    };
+    let root = std::env::temp_dir().join(format!("rtex-test-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("main.tex"), main).unwrap();
+    Some((tl, root, project))
+}
+
 fn preamble(project: &std::path::Path) -> String {
     let main = std::fs::read_to_string(project.join("main.tex")).unwrap();
     rtex_core::split_preamble(&main).unwrap().0.to_string()
@@ -270,4 +290,77 @@ fn a_large_result_is_drained_while_the_host_is_not_reading() {
     }
     let _ = s.shutdown();
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Captures `body` under a fontspec + bm preamble and compiles its `units` units in document
+/// order on one fresh server, as `rtex verify` does: each must compile without error and give
+/// the rows of the capture.
+fn bm_units_reproduce_the_capture(name: &str, body: &str, units: usize) {
+    let main = format!(
+        "\\documentclass{{article}}\n\\usepackage{{fontspec}}\n\\usepackage{{amsmath}}\n\
+         \\usepackage{{bm}}\n\\begin{{document}}\n{body}\n\\end{{document}}\n"
+    );
+    let Some((tl, root, project)) = setup_document(name, &main) else {
+        return;
+    };
+    let cap = run_capture(&tl, &project, "main.tex", &root.join("cap"), true).unwrap();
+    let policy = rtex_core::eligibility::Policy::from_preamble(&preamble(&project), &[], &[]);
+    let (store, files) =
+        rtex_core::layout::LayoutStore::offline(&cap, &project, "main.tex", &policy).unwrap();
+    let mapped: Vec<_> = store
+        .mapped_units()
+        .into_iter()
+        .filter(|(u, _)| u.rows() > 0)
+        .collect();
+    assert_eq!(mapped.len(), units);
+    let mut s = FastServer::spawn(
+        &tl,
+        &project,
+        &root.join("serve"),
+        &preamble(&project),
+        1,
+        None,
+    )
+    .unwrap();
+    for (u, span) in mapped {
+        s.set_context(u.uid, &u.context_json()).unwrap();
+        let src = files.fast_source(span).unwrap();
+        let (r, _) = s
+            .compile(u.uid, &src)
+            .unwrap_or_else(|e| panic!("unit {}: {e}", u.uid));
+        assert_eq!(r.status, "ok", "unit {}: {:?}", u.uid, r.errors);
+        if let Err(why) = store.probe_check(span, r.dl.as_ref().unwrap()) {
+            panic!("unit {} differs from the capture: {why}", u.uid);
+        }
+    }
+    s.shutdown().unwrap();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// `\bm` typesets its argument in the bold math version, and entering that version re-installs
+/// the version's math alphabets globally (`\mathbf` becomes the bold version's). The server's
+/// memoized `\glb@settings` (rtex-serve-patches.tex, patch 2) must re-install the normal
+/// version's alphabets when math comes back to it, or `\mathbf{M}` is set in the bold
+/// version's font.
+#[test]
+fn math_alphabets_return_with_the_normal_math_version() {
+    bm_units_reproduce_the_capture(
+        "bm-alphabet",
+        "Let $\\bm{0}$ be zero and $\\mathbf{M}$ a matrix.",
+        1,
+    );
+}
+
+/// The same after `\mathbf` in the normal version and a footnote: `\mathbf{M}` after `\bm`
+/// used to loop through the kernel's alphabet allocation until TeX gave up, which closed the
+/// server's response channel.
+#[test]
+fn math_alphabets_after_a_footnote_and_bold_math() {
+    bm_units_reproduce_the_capture(
+        "bm-footnote",
+        "where $\\mathbf{c}$ denotes the customer count of each zone.\n\n\
+         online.\\footnote{x}\n\n\
+         $\\bm{\\beta}_{s}=\\bm{0}$ for a substation $s$ and $\\mathbf{M}=\\bm{0}$.",
+        3,
+    );
 }

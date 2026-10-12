@@ -59,7 +59,7 @@ The integration tests in `crates/rtex-core/tests/`:
 |---|---|
 | `session.rs` | edits, splits and merges, stale results, probe mode, borrowed contexts, multi-file projects, counters, user environments, the title block |
 | `units.rs` | every unit kind takes the live path; the time budget |
-| `engine_robustness.rs` | errors, runaway loops, the watchdog, leaked definitions, large results, request order |
+| `engine_robustness.rs` | errors, runaway loops, the watchdog, leaked definitions, large results, request order, math alphabets after `\bm` |
 | `convergence.rs` | a converged layout equals a fresh run; the capture package does not change the PDF; biber and degraded pages |
 | `bibliography.rs` | biblatex in a fresh session, makeindex and imakeidx, glossaries |
 | `standby.rs` | the standby engine gives the same layout as a fresh run |
