@@ -753,7 +753,10 @@ const MATH_MACROS: &[&str] = &[
 const HARD_STOPS: &[(&str, Reason)] = &[];
 
 /// Macros provided by a package: allowed when the package is loaded, `NeedsPackage` otherwise.
+/// The document class counts as a package of its name.
 const PKG_MACROS: &[(&str, &[&str])] = &[
+    // list label setup, local to the list
+    ("IEEEtran", &["IEEEsetlabelwidth", "IEEEusemathlabelsep"]),
     (
         "hyperref",
         &[
@@ -1147,7 +1150,7 @@ const AMSMATH_INNER_ENVS: &[&str] = &[
     "array",
     "subarray",
 ];
-const LIST_ENVS: &[&str] = &["itemize", "enumerate", "description"];
+const LIST_ENVS: &[&str] = &["itemize", "enumerate", "description", "IEEEdescription"];
 const TABULAR_MACROS: &[&str] = &["hline", "cline", "multicolumn", "multirow"];
 const BOOKTABS_MACROS: &[&str] = &[
     "toprule",
@@ -1388,10 +1391,11 @@ impl Policy {
     }
 }
 
-/// `\usepackage[opts]{a,b}` / `\RequirePackage` occurrences as (options, names).
+/// `\usepackage[opts]{a,b}` / `\RequirePackage` occurrences as (options, names), and
+/// `\documentclass`: commands a class provides are allowed like a package's.
 fn usepackages(text: &str) -> Vec<(Vec<String>, Vec<String>)> {
     let mut out = Vec::new();
-    for key in ["\\usepackage", "\\RequirePackage"] {
+    for key in ["\\usepackage", "\\RequirePackage", "\\documentclass"] {
         let mut idx = 0;
         while let Some(p) = text[idx..].find(key) {
             let s = idx + p + key.len();
@@ -3144,6 +3148,24 @@ mod tests {
         assert_eq!(
             check_engine_unit("par", "", true, 3, &flags, None),
             vec![Reason::EngineFlag("dir=1".into())]
+        );
+    }
+    #[test]
+    fn ieeetran_lists() {
+        let list = "\\begin{IEEEdescription}[\\IEEEusemathlabelsep\\IEEEsetlabelwidth{$\\alpha,\\beta$}]\n\
+                    \\item[$\\alpha$] First symbol.\n\\item[$\\beta$] Second symbol.\n\\end{IEEEdescription}";
+        let keywords = "\\begin{IEEEkeywords}\nReliability, topology.\n\\end{IEEEkeywords}";
+        let ieee = Policy::from_preamble("\\documentclass[journal]{IEEEtran}\n", &[], &[]);
+        for (src, env) in [(list, "IEEEdescription"), (keywords, "IEEEkeywords")] {
+            let (shape, r) = classify_source(src, &ieee);
+            assert_eq!(shape, UnitShape::Env(env.into()));
+            assert!(r.is_empty(), "{env}: {r:?}");
+        }
+        // the label setup commands are the class's own
+        let article = Policy::from_preamble("\\documentclass{article}\n", &[], &[]);
+        assert_eq!(
+            classify_source(list, &article).1,
+            vec![Reason::NeedsPackage("IEEEtran".into())]
         );
     }
     #[test]

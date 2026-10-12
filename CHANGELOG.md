@@ -28,6 +28,12 @@
   instead of going live without the paragraph its title shares a line with. rtex knew run-in
   headings only by name; the capture now records which headings the class sets run-in.
 
+### New
+
+- IEEEtran's `IEEEkeywords` and `IEEEdescription` (a nomenclature, with `\IEEEsetlabelwidth`
+  and `\IEEEusemathlabelsep`) update as you type, like the standard lists. Commands a document
+  class provides can be allowed like a package's; these two are allowed with IEEEtran only.
+
 ## 0.0.3 (2026-10-11)
 
 ### Fixed

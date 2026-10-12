@@ -25,7 +25,7 @@ C.INT_PARAMS, C.DIM_PARAMS, C.GLUE_PARAMS = INT_PARAMS, DIM_PARAMS, GLUE_PARAMS
 C.BLOCK_ENVS = { "itemize", "enumerate", "description", "quote", "quotation", "verse", "center",
   "flushleft", "flushright", "figure", "figure*", "table", "table*", "abstract", "tabbing",
   "proof", "verbatim", "verbatim*", "lstlisting", "Verbatim", "alltt", "spacing", "thebibliography",
-  "tikzpicture", "circuitikz", "pgfpicture" }
+  "IEEEkeywords", "IEEEdescription", "tikzpicture", "circuitikz", "pgfpicture" }
 C.HEADINGS = { "part", "chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph" }
 local TWO_PAR_HEADINGS = { part = true, chapter = true }
 local UNSET = -0x7FFFFFFF
