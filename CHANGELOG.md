@@ -11,6 +11,10 @@
 - Comment lines inside or right above a paragraph no longer send its edits to the background
   pass. rtex read two `%` lines in a row as a blank line (a paragraph break); like TeX, it now
   drops the end of a commented line too (#3).
+- A figure or table with a comment line or `\vspace` right above it, or a comment after its
+  `\end`, compiles in the live engine. The engine looked for `\begin{figure}` only at the very
+  start of the unit and for `\end{figure}` only at its very end, so it typeset the `\begin` as
+  text and failed with "Not in outer par mode".
 - **Two-column documents** (IEEEtran, `twocolumn`) are live again. When a column break fell
   inside a paragraph, the page's two-column box was recorded as a row of that paragraph, and
   the lines inside it lost their placements: in a 12-page IEEEtran paper almost no body text
