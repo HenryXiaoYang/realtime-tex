@@ -312,14 +312,20 @@ function C.envafter(name)
   if C.env_depth == 0 and cur and (cur.kind == "env" or cur.kind == "par") and tex.nest.ptr == 0 then unit_close() end
 end
 
--- cmd/@outputpage/before hook: header and footer boxes are built inside the output routine's
--- group while a unit may still be open; without the unit attribute they are not unit rows.
+-- The output routine (wrapped at \begin{document}) and \@outputpage (for output routines set
+-- later, such as multicol's): boxes built there while a unit is open (header and footer, the
+-- two-column page box of \@outputdblcol) belong to the page; with the unit attribute they
+-- would be taken for rows of the unit and hide the lines inside them. Calls nest.
+C.output_depth = 0
 function C.output_begin()
+  C.output_depth = C.output_depth + 1
   C.in_output = true
   tex.setattribute("global", C.attr_unit, UNSET)
 end
--- cmd/@outputpage/after hook: back to the open unit (the attribute is global).
+-- back to the open unit (the attribute is global) when the outermost call ends
 function C.output_end()
+  C.output_depth = math.max(C.output_depth - 1, 0)
+  if C.output_depth > 0 then return end
   C.in_output = false
   local cur = C.cur
   tex.setattribute("global", C.attr_unit, cur and cur.uid or UNSET)

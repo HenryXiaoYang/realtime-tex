@@ -11,6 +11,12 @@
 - Comment lines inside or right above a paragraph no longer send its edits to the background
   pass. rtex read two `%` lines in a row as a blank line (a paragraph break); like TeX, it now
   drops the end of a commented line too (#3).
+- **Two-column documents** (IEEEtran, `twocolumn`) are live again. When a column break fell
+  inside a paragraph, the page's two-column box was recorded as a row of that paragraph, and
+  the lines inside it lost their placements: in a 12-page IEEEtran paper almost no body text
+  was live (#2). The capture now leaves everything the output routine builds out of units.
+- A paragraph with a `\marginpar` is live in probe mode, with the note in the margin following
+  after the next pass, like footnote text. The live engine reports the note as an insert.
 
 ## 0.0.3 (2026-10-11)
 

@@ -15,8 +15,12 @@
 % pdfpages, watermarks) that \ShipoutBox lacks in shipout/before; the page attributes are
 % taken here (pdflscape's /Rotate).
 \AddToHook{shipout/before}{\directlua{rtex_capture.page_attr("\luaescapestring{\the\pdfvariable pageattr}")}}
-\AddToHook{cmd/@outputpage/before}{\directlua{rtex_capture.output_begin()}}
-\AddToHook{cmd/@outputpage/after}{\directlua{rtex_capture.output_end()}}
+\def\rtex@outbegin{\directlua{rtex_capture.output_begin()}}
+\def\rtex@outend{\directlua{rtex_capture.output_end()}}
+\AddToHook{cmd/@outputpage/before}{\rtex@outbegin}
+\AddToHook{cmd/@outputpage/after}{\rtex@outend}
+% the whole output routine, as packages left it
+\AddToHook{begindocument/end}{\output\expandafter{\expandafter\rtex@outbegin\the\output\rtex@outend}}
 \AddToHook{cmd/@afterheading/before}{\directlua{rtex_capture.afterheading()}}
 \AddToHook{enddocument/afterlastpage}{\directlua{rtex_capture.finish()}}
 % Unit boundaries: block environments and sectioning commands. Extra block environments

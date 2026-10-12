@@ -389,6 +389,7 @@ function S.begin_compile(req_id, ctx_id, source, pics)
     return
   end
   S.errors = {}
+  S.margin_notes = 0
   local ftoks = ctx.nfss_tokens
   local font_changed = ftoks ~= last_nfss
   if font_changed then last_nfss = ftoks else ftoks = "" end
@@ -425,6 +426,11 @@ function S.image(index, file, page, pages)
   S.images[tostring(index)] = { index = index, file = file, page = tonumber(page) or 1, pages = pages }
   S.images_used = true
 end
+
+-- \marginpar in a unit (hook in rtex-serve-patches.tex): LaTeX refuses it inside the unit box,
+-- so the note never becomes an insert there; it is counted as one, like footnote text, so the
+-- result says that the page builder places material of this unit.
+function S.margin_note() S.margin_notes = (S.margin_notes or 0) + 1 end
 
 function S.mark()
   local cur = S.current
@@ -522,7 +528,7 @@ finish_body = function(cur)
   local bytes, nlines, nglyphs, bw, bh, bd, flags = "", 0, 0, 0, 0, 0, nil
   if box then
     -- traversal and serialization fused: records are written while walking the nodes
-    bytes, nlines, nglyphs, bw, bh, bd, flags = dl.paragraph_binary(box, cur.ctx.color)
+    bytes, nlines, nglyphs, bw, bh, bd, flags = dl.paragraph_binary(box, cur.ctx.color, S.margin_notes)
   end
   local t2 = gettime()
   if trace_file then trace(format("finish: traversal done, %d bytes", #bytes)) end

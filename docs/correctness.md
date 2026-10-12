@@ -96,9 +96,11 @@ entries, and the bibliography. The rest are excluded by design:
 
 **Probe mode** is checked separately. `fixtures/research/permissive` has 29 units built from
 commands outside the allow-list. With the allow-list switched off, 28 are compiled live and
-compared. 26 are identical; the 2 that differ depend on page state, as expected (`\thepage` on
-page 2, and `\marginpar`). The comparison catches both. CI requires exactly those two, so a
-construct the comparison stops catching fails the build.
+compared. 27 are identical. The one that differs is the `multicols` paragraph: multicol splits
+its lines into columns in its own output routine. The comparison catches it. CI requires exactly
+that one, so a construct the comparison stops catching fails the build. The `\marginpar`
+paragraph is identical: its note is placed by the page builder, and a live result reports it
+like footnote text, so the note follows after the next pass.
 
 ## In CI
 
@@ -115,7 +117,7 @@ rtex gen-book --pages 10 --out build/fx/book-10-pure
 rtex verify --project build/fx/book-10-pure --raster          # needs python3 with PyMuPDF for --raster
 rtex verify --project fixtures/book-10-units-lmtfm --dump-rows  # print both sides of any unit that differs
 rtex verify --project fixtures/corpus/pictures --pic-cache --raster
-rtex verify --project fixtures/research/permissive --permissive --expect-differing 2
+rtex verify --project fixtures/research/permissive --permissive --expect-differing 1
 ```
 
 To run the oracle (check 1):

@@ -790,7 +790,8 @@ end
 -- Paragraph box straight to binary display-list bytes (encoding revision 1). Same traversal as
 -- M.paragraph; records are written as they are produced, META/FONT/FLAG records last.
 -- Returns bytes, line count, glyph count, width, height, depth, flags table.
-function M.paragraph_binary(boxnode, initial_color)
+-- `extra_inserts`: inserts the box cannot hold (margin notes refused in a box), counted in META.
+function M.paragraph_binary(boxnode, initial_color, extra_inserts)
   local box = todirect(boxnode)
   local st = new_state({ lines_at_top = true })
   st.bin = true
@@ -800,6 +801,7 @@ function M.paragraph_binary(boxnode, initial_color)
   if initial_color and initial_color ~= "" then st:emit({ "c", 0, 0, initial_color }) end
   local w, h, d = getwhd(box)
   vlist_out(st, box, 0, 0)
+  st.inserts = st.inserts + (extra_inserts or 0)
   st:bin_flush_run()
   local buf = st.buf
   buf[#buf + 1] = pack("<Bs4", 0x01, pack("<i4i4i4i4i4i4i4i4I4I4", w, h, d, 0, 0, 0, 0, st.inserts, st.glyphs, st.images))

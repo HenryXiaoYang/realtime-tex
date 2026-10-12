@@ -64,6 +64,7 @@ The integration tests in `crates/rtex-core/tests/`:
 | `bibliography.rs` | biblatex in a fresh session, makeindex and imakeidx, glossaries |
 | `standby.rs` | the standby engine gives the same layout as a fresh run |
 | `capture_groups.rs` | paragraphs that start inside a group |
+| `twocolumn.rs` | every unit of a two-column document has its lines as rows |
 | `piccache_live.rs` | cached pictures in the live engine |
 | `internal_error.rs` | a Lua error inside the server is answered, not swallowed |
 | `export.rs` | export equals a clean build; errors are reported |

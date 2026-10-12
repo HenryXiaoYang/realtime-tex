@@ -186,4 +186,9 @@
     \global\@specialpagefalse}%
 \fi
 %
+% 6. Margin notes. LaTeX refuses \marginpar inside the unit box ("Not in outer par mode"), so
+%    the note never becomes an insert there; the server counts it as one (rtex-serve.lua,
+%    margin_note), which makes the result say that the page builder places part of the unit.
+\AddToHook{cmd/marginpar/before}{\directlua{rtex_serve.margin_note()}}
+%
 \makeatother
