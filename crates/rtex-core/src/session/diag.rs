@@ -150,15 +150,30 @@ pub fn parse_log(log: &Path) -> Vec<Diagnostic> {
         regex::Regex::new(r"^(?:LaTeX|Package \w+|Class \w+) Warning: (?P<msg>.*)$").unwrap();
     let re_box =
         regex::Regex::new(r"^(Overfull|Underfull) \\[hv]box .* at lines (\d+)--(\d+)").unwrap();
+    // LaTeX, class and package messages continue on lines that start with `(LaTeX)` or
+    // `(<package>)`; their text often says what is wrong (versions, file names)
+    let re_cont = regex::Regex::new(r"^\([A-Za-z][\w@-]*\)(?:\s+(?P<rest>.*))?$").unwrap();
+    let full_message = |first: &str, i: usize| -> (String, usize) {
+        let mut msg = first.to_string();
+        let mut j = i + 1;
+        while let Some(c) = lines.get(j).and_then(|l| re_cont.captures(l)) {
+            let rest = c.name("rest").map_or("", |m| m.as_str()).trim_end();
+            msg.push('\n');
+            msg.push_str(rest);
+            j += 1;
+        }
+        (msg.trim_end().to_string(), j)
+    };
     for (i, l) in lines.iter().enumerate() {
         if let Some(c) = re_fle.captures(l) {
             if c["msg"].starts_with("Undefined") || !c["msg"].is_empty() {
+                let (message, next) = full_message(&c["msg"], i);
                 out.push(Diagnostic {
                     severity: "error".into(),
                     file: Some(c["file"].to_string()),
                     line: c["line"].parse().ok(),
-                    message: c["msg"].to_string(),
-                    context: lines.get(i + 1).map(|s| s.to_string()),
+                    message,
+                    context: lines.get(next).map(|s| s.to_string()),
                 });
             }
         } else if let Some(c) = re_warn.captures(l) {
@@ -166,7 +181,7 @@ pub fn parse_log(log: &Path) -> Vec<Diagnostic> {
                 severity: "warning".into(),
                 file: None,
                 line: None,
-                message: c["msg"].to_string(),
+                message: full_message(&c["msg"], i).0,
                 context: None,
             });
         } else if let Some(c) = re_box.captures(l) {
@@ -177,13 +192,14 @@ pub fn parse_log(log: &Path) -> Vec<Diagnostic> {
                 message: l.to_string(),
                 context: None,
             });
-        } else if let Some(message) = l.strip_prefix("! ") {
+        } else if let Some(first) = l.strip_prefix("! ") {
+            let (message, next) = full_message(first, i);
             out.push(Diagnostic {
                 severity: "error".into(),
                 file: None,
                 line: None,
-                message: message.to_string(),
-                context: lines.get(i + 1).map(|s| s.to_string()),
+                message,
+                context: lines.get(next).map(|s| s.to_string()),
             });
         }
     }
@@ -213,6 +229,42 @@ mod tests {
                 (Some("./main.tex"), Some(12)),
                 (Some("D:/a/build/rtex-preamble.tex"), Some(5))
             ]
+        );
+    }
+
+    #[test]
+    fn latex_errors_keep_their_continuation_lines() {
+        let log = std::env::temp_dir().join(format!("rtex-diag-cont-{}.log", std::process::id()));
+        std::fs::write(
+            &log,
+            "(/usr/share/texmf-dist/tex/latex/l3kernel/expl3.sty\n\
+             Package: expl3 2026-01-19 L3 programming layer (loader) \n\n\
+             /usr/share/texmf-dist/tex/latex/l3kernel/expl3.sty:78: LaTeX Error: Mismatched LaTeX support files detected.\n\
+             (LaTeX)        Loading 'expl3.sty' aborted!\n\
+             (LaTeX)        \n\
+             (LaTeX)        The L3 programming layer in the LaTeX format\n\
+             (LaTeX)        is dated 2025-06-30, but in your TeX tree the files require\n\
+             (LaTeX)        at least 2026-01-19.\n\n\
+             For immediate help type H <return>.\n\
+             Package hyperref Warning: Token not allowed in a PDF string (Unicode):\n\
+             (hyperref)                removing `math shift' on input line 3.\n\
+             (./main.aux)\n",
+        )
+        .unwrap();
+        let d = parse_log(&log);
+        let _ = std::fs::remove_file(&log);
+        assert_eq!(d.len(), 2, "{d:?}");
+        assert_eq!(d[0].line, Some(78));
+        assert_eq!(
+            d[0].message,
+            "LaTeX Error: Mismatched LaTeX support files detected.\nLoading 'expl3.sty' aborted!\n\n\
+             The L3 programming layer in the LaTeX format\nis dated 2025-06-30, but in your TeX tree \
+             the files require\nat least 2026-01-19."
+        );
+        assert_eq!(d[0].context.as_deref(), Some(""));
+        assert_eq!(
+            d[1].message,
+            "Token not allowed in a PDF string (Unicode):\nremoving `math shift' on input line 3."
         );
     }
 }

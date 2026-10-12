@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Diagnostics keep the whole text of LaTeX, class and package messages, including the
+  `(LaTeX)`/`(<package>)` continuation lines. Before, only the first line came through, so
+  an error such as "Mismatched LaTeX support files detected" lost the lines that say which
+  versions do not match (#1).
+
 ## 0.0.3 (2026-10-11)
 
 ### Fixed
