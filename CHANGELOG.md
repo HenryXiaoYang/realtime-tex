@@ -34,6 +34,11 @@
   and `\IEEEusemathlabelsep`) update as you type, like the standard lists. Commands a document
   class provides can be allowed like a package's; these two are allowed with IEEEtran only.
 
+### CI and repository
+
+- The corpus has an IEEEtran journal paper (two columns, a nomenclature, run-in headings,
+  floats). CI checks that at least 18 of its units are live and that all of them are exact.
+
 ## 0.0.3 (2026-10-11)
 
 ### Fixed

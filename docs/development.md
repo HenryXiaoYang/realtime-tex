@@ -88,9 +88,9 @@ rtex dl2json FILE
 ```
 
 `fixtures/corpus/` has realistic documents (homework, analysis notes, a report, a lab report, a
-code document, a multi-file project, counters, a TikZ-heavy document). CI runs `rtex verify` on
-each with a minimum number of live units. `fixtures/research/permissive/` holds constructs
-outside the allow-list, used to check that probe mode catches every difference.
+code document, a multi-file project, counters, a TikZ-heavy document, an IEEEtran journal paper).
+CI runs `rtex verify` on each with a minimum number of live units. `fixtures/research/permissive/`
+holds constructs outside the allow-list, used to check that probe mode catches every difference.
 
 ## CI
 
