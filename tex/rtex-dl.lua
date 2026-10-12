@@ -49,6 +49,13 @@ end
 local function silent_whatsit(sub)
   return SILENT[sub] == true
 end
+-- LuaTeX's PDF backend draws only specials that start with "pdf:" or "PDF:" (case and leading
+-- spaces matter) and drops the rest with "Non-PDF special ignored!", e.g. the papersize=
+-- special a class writes under LuaLaTeX
+local function drawn_special(data)
+  local p = (data or ""):sub(1, 4)
+  return p == "pdf:" or p == "PDF:"
+end
 
 local RUNNING = -1073741824  -- null_flag: running dimension for rules
 local RS = node.subtypes("rule")
@@ -508,7 +515,8 @@ hlist_out = function(st, box, left, base_v)
         elseif sub == ws_literal then
           st:emit({ "l", getfield(n, "mode"), getfield(n, "data") }); st:flag("literal")
         elseif sub == ws_special then
-          st:emit({ "l", -1, getfield(n, "data") }); st:flag("special")
+          local data = getfield(n, "data")
+          if drawn_special(data) then st:emit({ "l", -1, data }); st:flag("special") end
         elseif silent_whatsit(sub) then
           -- bookkeeping whatsits (\write, luaotfload, hyperref) produce no output
         elseif sub == ws_save then
@@ -673,7 +681,8 @@ vlist_out = function(st, box, left, top)
       elseif sub == ws_literal then
         st:emit({ "l", getfield(n, "mode"), getfield(n, "data") }); st:flag("literal")
       elseif sub == ws_special then
-        st:emit({ "l", -1, getfield(n, "data") }); st:flag("special")
+        local data = getfield(n, "data")
+        if drawn_special(data) then st:emit({ "l", -1, data }); st:flag("special") end
       elseif silent_whatsit(sub) then
       elseif sub == ws_save then
         st:emit({ "M", "save", left, cur_v, "" })

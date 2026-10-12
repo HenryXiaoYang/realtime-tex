@@ -20,7 +20,15 @@ node = node or {}
 node.types = node.types or function() return { [0] = "hlist", [1] = "vlist", [2] = "rule", [29] = "glyph", [12] = "glue", [13] = "kern", [28] = "margin_kern", [7] = "disc", [11] = "math", [8] = "whatsit", [14] = "penalty", [9] = "local_par", [10] = "dir", [3] = "ins", [4] = "mark", [5] = "adjust", [6] = "boundary" } end
 node.whatsits = node.whatsits or function() return { [0] = "open", [1] = "write", [2] = "close", [8] = "late_lua", [22] = "pdf_literal", [28] = "pdf_colorstack", [3] = "special", [6] = "save_pos", [7] = "user_defined", [29] = "pdf_setmatrix", [30] = "pdf_save", [31] = "pdf_restore" } end
 node.subtypes = node.subtypes or function() return { [0] = "normal", [1] = "box", [2] = "image", [3] = "empty", [4] = "user", [9] = "outline" } end
-node.direct = node.direct or setmetatable({}, { __index = function() return function() end end })
+-- direct nodes are plain tables, enough to walk boxes of whatsits
+local function field(k) return function(n) return n[k] end end
+local function dim(k) return function(n) return n[k] or 0 end end
+node.direct = node.direct or setmetatable({
+  todirect = function(n) return n end, getid = field("id"), getnext = field("next"),
+  getlist = field("list"), getsubtype = field("subtype"), getfield = function(n, k) return n[k] end,
+  getwidth = dim("width"), getshift = dim("shift"),
+  getwhd = function(n) return n.width or 0, n.height or 0, n.depth or 0 end,
+}, { __index = function() return function() end end })
 node.type = node.type or function(id) return node.types()[id] end
 font = font or { getfont = function() return nil end }
 tex = tex or { hoffset = 0, voffset = 0, pagewidth = 0, pageheight = 0 }
@@ -37,5 +45,22 @@ end
 check("round_xn_over_d matches exact rounding", okc)
 -- expansion formula: ef in millionths, 2% stretch of 431102 sp
 check("expansion 2%", dl.round_xn_over_d(431102, 1020000, 1000000) == 439724)
+
+-- specials: LuaTeX's PDF backend draws only those starting with "pdf:" or "PDF:" and ignores
+-- the rest ("Non-PDF special ignored!"), so only those make the display list inexact
+local function special(data) return { id = 8, subtype = 3, data = data } end
+local function special_flags(data)
+  local in_row = dl.paragraph({ id = 1, list = { id = 0, list = special(data) } }).flags.special
+  local in_vlist = dl.paragraph({ id = 1, list = special(data) }).flags.special
+  return in_row, in_vlist
+end
+for _, data in ipairs{ "papersize=597.50787pt,845.04684pt", "Pdf: 0 0 m", " pdf: 0 0 m", "pdf", "color push gray 0" } do
+  local a, b = special_flags(data)
+  check("ignored special not flagged: " .. data, a == nil and b == nil, tostring(a) .. " " .. tostring(b))
+end
+for _, data in ipairs{ "pdf: 0 0 m 1 1 l S", "PDF:direct:0 0 m", "pdf:" } do
+  local a, b = special_flags(data)
+  check("pdf special flagged: " .. data, a == 1 and b == 1, tostring(a) .. " " .. tostring(b))
+end
 
 if failures > 0 then print(failures .. " failure(s)"); os.exit(1) else print("all Lua tests passed") end

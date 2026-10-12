@@ -17,6 +17,10 @@
   was live (#2). The capture now leaves everything the output routine builds out of units.
 - A paragraph with a `\marginpar` is live in probe mode, with the note in the margin following
   after the next pass, like footnote text. The live engine reports the note as an insert.
+- The first page of an IEEEtran document is drawn from its display list, not from the
+  PDF. Under LuaLaTeX the class writes a `\special{papersize=…}`, which LuaTeX's PDF backend
+  ignores, and rtex took it for something a display list cannot show. Only `pdf:` specials,
+  the ones the backend draws, mark a page as degraded now.
 
 ## 0.0.3 (2026-10-11)
 
