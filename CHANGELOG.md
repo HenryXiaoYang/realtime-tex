@@ -21,6 +21,10 @@
   was live (#2). The capture now leaves everything the output routine builds out of units.
 - A paragraph with a `\marginpar` is live in probe mode, with the note in the margin following
   after the next pass, like footnote text. The live engine reports the note as an insert.
+- A figure, table, list or other block environment that is the last thing in an `\input` file
+  is live. Unless the file ended with a blank line, its edits went to the background pass: the
+  trailing space rtex keeps for a paragraph at the end of an `\input` file was added after the
+  environment too, and it no longer ended with its `\end`.
 
 ## 0.0.3 (2026-10-11)
 
