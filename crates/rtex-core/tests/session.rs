@@ -758,6 +758,67 @@ fn input_files_are_tracked() {
     s.close();
 }
 
+/// A float that ends an `\input`ted file, with no blank line after it, is a live unit like a
+/// float anywhere else.
+#[test]
+fn float_ending_an_input_file_is_live() {
+    if rtex_core::texlive::TexLive::discover().is_err() {
+        eprintln!("SKIP: no lualatex");
+        return;
+    }
+    let root =
+        std::env::temp_dir().join(format!("rtex-session-{}-input-float", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("main.tex"),
+        "\\documentclass{article}\n\\begin{document}\n\\input{a}\n\nAfter the input.\n\\end{document}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("a.tex"),
+        "Before the figure.\n\n\\begin{figure}[t]\n\\centering\n\\rule{2cm}{1cm}\n\\caption{A figure}\n\\end{figure}\n",
+    )
+    .unwrap();
+    let mut cfg = SessionConfig::new(&project, "main.tex");
+    cfg.build_dir = root.join("build");
+    cfg.debounce = Duration::from_millis(50);
+    let s = Session::open(cfg).unwrap();
+    let Event::LayoutUpdate {
+        eligible_paragraphs,
+        ..
+    } = wait_layout(&s)
+    else {
+        unreachable!()
+    };
+    let fig = s.spans("a.tex").last().unwrap().clone();
+    assert!(
+        eligible_paragraphs.contains(&fig.id),
+        "the figure has a context"
+    );
+    let text = s.document_text("a.tex").unwrap();
+    let pos = text.find("A figure").unwrap() + "A figure".len();
+    let r = s
+        .apply_edit(
+            "a.tex",
+            Edit {
+                start_byte: pos,
+                end_byte: pos,
+                text: " edited".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(r.routed, "fast", "{:?}", r.reasons);
+    let (ev, _) = wait(&s, 60, |e| matches!(e, Event::ParagraphUpdate { .. }));
+    let Some(Event::ParagraphUpdate { par_id, status, .. }) = ev else {
+        panic!("no update")
+    };
+    assert_eq!(par_id, fig.id);
+    assert_eq!(status, "ok");
+    s.close();
+}
+
 /// A fast edit that changes what a unit advances a counter to (an equation added) renumbers
 /// what follows: the session schedules a layout pass; a later edit that keeps the counters
 /// does not.

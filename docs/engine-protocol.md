@@ -191,7 +191,7 @@ the definition it was written against (`\ifx` against a copy), and is skipped ot
 | Patch | Saves |
 |---|---|
 | `\markright`/`\markboth` insert no marks (only their `\nobreak` after a heading remains): the box is never shipped, so no running head reads them | about 150 µs per `\section` |
-| `\glb@settings` memoizes the math font setup per (math version, size). The kernel rebuilds about 40 fonts whenever math is entered at a new size, which a footnote mark does twice | about 0.7 ms per footnote paragraph with microtype |
+| `\glb@settings` memoizes the math font setup per (math version, size). The kernel rebuilds about 40 fonts whenever math is entered at a new size, which a footnote mark does twice. A hit still runs `\mv@<version>` with `\getanddefine@fonts` disabled: that loads no font but re-installs the version's math alphabets, which entering another version (bold, for `\bm`) replaces globally | about 0.7 ms per footnote paragraph with microtype |
 | graphics: the two file-existence probes per `\includegraphics` are remembered for files that exist, and log-only messages are dropped | about 170 µs per figure |
 
 `rtex verify` compares every kind of unit against a full run without these patches.

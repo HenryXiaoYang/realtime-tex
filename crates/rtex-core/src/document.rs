@@ -225,7 +225,10 @@ pub fn inputted_files(
 /// `\n{}` when the span ends a file read with `\input` without a final blank line. At that
 /// point TeX produces a second end-of-line space (the parent's `\input` line), and `\par`
 /// removes only the last glue, so the paragraph keeps one trailing space; `{}` on a new line
-/// reproduces that space token exactly (same space factor), and nothing else.
+/// reproduces that space token exactly (same space factor), and nothing else. A span that ends
+/// with a block environment (a float, a list, a theorem) gets no `{}`: TeX is in vertical mode
+/// there and drops the space, and the unit must end with the environment's `\end` to be
+/// classified as that environment (`eligibility::unit_shape`).
 pub fn fast_source(fb: &FileBuf, span: &Span, file_is_inputted: bool) -> String {
     let text = fb.text[span.range.clone()].trim_end_matches('\n');
     let mut src = text.to_string();
@@ -235,11 +238,22 @@ pub fn fast_source(fb: &FileBuf, span: &Span, file_is_inputted: bool) -> String 
         let own_tail = &own[own.trim_end().len()..];
         let ends_file = rest.trim().is_empty()
             && own_tail.matches('\n').count() + rest.matches('\n').count() <= 1;
-        if ends_file {
+        if ends_file && !ends_with_block_env(fb, text) {
             src.push_str("\n{}");
         }
     }
     src
+}
+
+/// The last non-comment line of `text` ends with `\end{…}` of a block environment.
+fn ends_with_block_env(fb: &FileBuf, text: &str) -> bool {
+    text.lines()
+        .map(|l| strip_comment(l).trim())
+        .rfind(|l| !l.is_empty())
+        .and_then(|l| l.strip_suffix('}')?.rsplit_once("\\end{"))
+        .is_some_and(|(_, name)| {
+            BLOCK_ENVS.contains(&name) || fb.extra_block_envs.iter().any(|e| e == name)
+        })
 }
 
 /// `main` plus, transitively, every file it inputs that exists under `root` (missing files are
@@ -308,8 +322,9 @@ pub fn expand_inputs(text: &str, files: &std::collections::BTreeMap<String, Stri
 }
 
 /// Setup statements found in the document body (see `eligibility::setup_statements`), in
-/// document order: the main file's body, then the other files. Chunks are separated by blank
-/// lines, like the segmenter's paragraph spans.
+/// document order: the main file's body, then the files the body reads. A file read only in
+/// the preamble is not scanned: `crate::server_preamble` inlines it there already. Chunks are
+/// separated by blank lines, like the segmenter's paragraph spans.
 pub fn body_setup_statements(
     texts: &std::collections::BTreeMap<String, String>,
     main: &str,
@@ -333,10 +348,12 @@ pub fn body_setup_statements(
     };
     if let Some(t) = texts.get(main) {
         scan(t);
-    }
-    for (name, t) in texts {
-        if name != main {
-            scan(t);
+        // a file read in both the preamble and the body is read again by the body
+        let body = crate::split_preamble(t).map_or(t.as_str(), |(_, body)| body);
+        for name in transitive_inputs(body, texts) {
+            if name != main {
+                scan(&texts[&name]);
+            }
         }
     }
     out
@@ -999,6 +1016,50 @@ mod tests {
         assert_eq!(fast_source(&fb, &fb.spans[0], true), "First.");
         let fb2 = FileBuf::new("Only.\n\n", &mut ids, 1);
         assert_eq!(fast_source(&fb2, &fb2.spans[0], true), "Only.");
+        // a block environment ending the file keeps its `\end` last, with or without the final
+        // newline, theorem-like environments included
+        let fig = "Text.\n\n\\begin{figure}\nx\n\\end{figure} % done\n";
+        for text in [fig, fig.trim_end()] {
+            let fb = FileBuf::new(text, &mut ids, 1);
+            let env = fb.spans.last().unwrap();
+            assert_eq!(env.kind, SpanKind::Env);
+            assert!(fast_source(&fb, env, true).ends_with("\\end{figure} % done"));
+        }
+        let thm = "\\begin{theorem}\nx\n\\end{theorem}\n";
+        let fb = FileBuf::with_block_envs(thm, &mut ids, 1, vec!["theorem".into()]);
+        assert_eq!(fast_source(&fb, &fb.spans[0], true), thm.trim_end());
+        // a paragraph with display math is an Env span too, and keeps its trailing space
+        let fb = FileBuf::new(
+            "We have\n\\begin{equation}\nx\n\\end{equation}\nwhere x is one.\n",
+            &mut ids,
+            1,
+        );
+        assert_eq!(fb.spans[0].kind, SpanKind::Env);
+        assert!(fast_source(&fb, &fb.spans[0], true).ends_with("one.\n{}"));
+    }
+
+    #[test]
+    fn body_setup_statements_come_from_files_the_body_reads() {
+        // defs.tex is read in the preamble only (the server preamble inlines it already),
+        // chap.tex in the body
+        let mut texts = std::collections::BTreeMap::new();
+        texts.insert(
+            "main.tex".to_string(),
+            "\\documentclass{article}\n\\input{defs}\n\\begin{document}\n\\input{chap}\n\\end{document}\n"
+                .to_string(),
+        );
+        texts.insert(
+            "defs.tex".to_string(),
+            "\\newcommand{\\pre}{P}\n".to_string(),
+        );
+        texts.insert(
+            "chap.tex".to_string(),
+            "\\newcommand{\\kw}{K}\n\nText \\kw.\n".to_string(),
+        );
+        assert_eq!(
+            body_setup_statements(&texts, "main.tex"),
+            vec!["\\newcommand{\\kw}{K}"]
+        );
     }
     const DOC: &str = "\\documentclass{book}\n\\usepackage{microtype}\n\\begin{document}\n\\chapter{One}\n\nFirst paragraph\nspanning two lines.\n\nSecond paragraph.\n\n\\begin{itemize}\n\\item a\n\n\\item b\n\\end{itemize}\n\nThird.\n\\end{document}\n";
 

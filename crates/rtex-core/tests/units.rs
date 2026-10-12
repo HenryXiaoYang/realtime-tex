@@ -21,7 +21,11 @@ fn setup(name: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
 
 fn kind_of(text: &str) -> &'static str {
     let t = text.trim_start();
-    if t.starts_with("\\chapter") || t.starts_with("\\section") {
+    if t.starts_with('%') && t.contains("\\begin{figure}") {
+        "figure after a comment"
+    } else if t.contains("\\end{table} %") {
+        "table with a comment after it"
+    } else if t.starts_with("\\chapter") || t.starts_with("\\section") {
         "heading"
     } else if t.starts_with("\\begin{figure}") {
         "figure"
@@ -114,6 +118,22 @@ fn every_unit_kind_takes_the_fast_path() {
     let Some((root, project)) = setup("kinds") else {
         return;
     };
+    // a comment line and vertical material above a float, and a comment after its \end, are
+    // part of the float's unit
+    let main = project.join("main.tex");
+    let tex = std::fs::read_to_string(&main)
+        .unwrap()
+        .replacen(
+            "\\begin{figure}",
+            "% a comment line above the figure\n\\vspace{1ex}\n\\begin{figure}",
+            1,
+        )
+        .replacen(
+            "\\end{table}\n",
+            "\\end{table} % a comment after the table\n",
+            1,
+        );
+    std::fs::write(&main, tex).unwrap();
     let mut cfg = SessionConfig::new(&project, "main.tex");
     cfg.build_dir = root.join("build");
     cfg.fast_budget = Duration::from_millis(50); // first compiles load fonts
@@ -221,8 +241,20 @@ fn every_unit_kind_takes_the_fast_path() {
     }
     eprintln!("fast-path units by kind (count, slowest µs): {seen:?}");
     for k in [
-        "heading", "figure", "table", "list", "theorem", "quote", "align", "equation", "display",
-        "footnote", "refs", "plain",
+        "heading",
+        "figure",
+        "figure after a comment",
+        "table",
+        "table with a comment after it",
+        "list",
+        "theorem",
+        "quote",
+        "align",
+        "equation",
+        "display",
+        "footnote",
+        "refs",
+        "plain",
     ] {
         assert!(
             seen.contains_key(k),
