@@ -233,7 +233,8 @@ local function install_context(id, ctx)
   if ep ~= "" then extra[#extra + 1] = "\\everypar{" .. ep .. "}" end
   ctx.float = kind == "env" and name and FLOAT_ENVS[name] or nil
   if ctx.float then
-    -- what \@xfloat does to the float box content (\@floatboxreset = \reset@font\normalsize\@setminipage)
+    -- what \@xfloat does to the float box content; \@floatboxreset is the kernel's
+    -- \reset@font\normalsize\@setminipage, or the class's version replayed with the macros above
     extra[#extra + 1] = "\\def\\@captype{" .. name:gsub("%*$", "") .. "}\\hsize\\" .. ctx.float .. "\\@parboxrestore\\@floatboxreset "
   end
   ctx.head_extra = table.concat(extra)

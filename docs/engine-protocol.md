@@ -108,9 +108,10 @@ One per unit, built by the host from the latest capture (`EngineUnit::context_js
 - `everypar` must be one of the kernel's own patterns: empty, `\leftprotrusion`, or what
   `\@afterheading`, `\@doendpe` or `\@setminipage` leave. The host refuses anything else.
 - `macros` holds the meanings of macros the document body redefines, as `\meaning` prints them,
-  and the server replays them as local definitions. A `\newif` switch (`\iftrue`/`\iffalse`,
-  for example glossaries' first-use flags) is set locally for the compile and reset globally to
-  its idle value afterwards.
+  and the server replays them as local definitions. For a float it also holds `\@floatboxreset`
+  as the float environment set it up (IEEEtran's tables are `\footnotesize`). A `\newif` switch
+  (`\iftrue`/`\iffalse`, for example glossaries' first-use flags) is set locally for the compile
+  and reset globally to its idle value afterwards.
 - `thefmt` holds `\the<counter>` bodies, replayed when they differ from the server's.
 - `counters` are the LaTeX counters at the unit's start. `page` is never replayed.
 

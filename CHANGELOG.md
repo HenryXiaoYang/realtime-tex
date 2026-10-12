@@ -21,6 +21,9 @@
   PDF. Under LuaLaTeX the class writes a `\special{papersize=…}`, which LuaTeX's PDF backend
   ignores, and rtex took it for something a display list cannot show. Only `pdf:` specials,
   the ones the backend draws, mark a page as degraded now.
+- A table edited live in IEEEtran keeps the class's `\footnotesize`. The live engine set every
+  float box like the LaTeX kernel, in `\normalsize`; it now uses the float box the class sets
+  up for tables and figures.
 
 ## 0.0.3 (2026-10-11)
 
