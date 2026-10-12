@@ -71,8 +71,19 @@ fi
 
 export PATH="$(if [ "$WINDOWS" = 1 ]; then cygpath -u "$BIN"; else echo "$BIN"; fi):$PATH"
 echo "==> Installing packages"
-"$TLMGR" option repository "$TL_REPO" >/dev/null
-"$TLMGR" install "${PACKAGES[@]}"
+# only the missing ones, checked against the local package database: a complete installation
+# (a CI cache) does not contact the repository at all
+installed="$("$TLMGR" info --only-installed --data name | tr -d '\r')"
+missing=()
+for p in "${PACKAGES[@]}"; do
+  grep -qx "$p" <<<"$installed" || missing+=("$p")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+  "$TLMGR" option repository "$TL_REPO" >/dev/null
+  # a repository with a newer tlmgr refuses every other action until tlmgr is updated
+  "$TLMGR" update --self
+  "$TLMGR" install "${missing[@]}"
+fi
 
 echo "==> Building formats and font database"
 fmtutil-sys --byfmt lualatex >/dev/null 2>&1 || fmtutil-sys --byfmt lualatex
