@@ -25,6 +25,9 @@
   is live. Unless the file ended with a blank line, its edits went to the background pass: the
   trailing space rtex keeps for a paragraph at the end of an `\input` file was added after the
   environment too, and it no longer ended with its `\end`.
+- A file `\input` in the preamble (a macro file, say) is loaded once by the live engine. It
+  was also read again as document setup, so every engine start logged "Command ... already
+  defined" for each of its macros.
 
 ## 0.0.3 (2026-10-11)
 

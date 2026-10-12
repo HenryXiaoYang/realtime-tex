@@ -322,8 +322,9 @@ pub fn expand_inputs(text: &str, files: &std::collections::BTreeMap<String, Stri
 }
 
 /// Setup statements found in the document body (see `eligibility::setup_statements`), in
-/// document order: the main file's body, then the other files. Chunks are separated by blank
-/// lines, like the segmenter's paragraph spans.
+/// document order: the main file's body, then the files the body reads. A file read only in
+/// the preamble is not scanned: `crate::server_preamble` inlines it there already. Chunks are
+/// separated by blank lines, like the segmenter's paragraph spans.
 pub fn body_setup_statements(
     texts: &std::collections::BTreeMap<String, String>,
     main: &str,
@@ -347,10 +348,12 @@ pub fn body_setup_statements(
     };
     if let Some(t) = texts.get(main) {
         scan(t);
-    }
-    for (name, t) in texts {
-        if name != main {
-            scan(t);
+        // a file read in both the preamble and the body is read again by the body
+        let body = crate::split_preamble(t).map_or(t.as_str(), |(_, body)| body);
+        for name in transitive_inputs(body, texts) {
+            if name != main {
+                scan(&texts[&name]);
+            }
         }
     }
     out
@@ -1033,6 +1036,30 @@ mod tests {
         );
         assert_eq!(fb.spans[0].kind, SpanKind::Env);
         assert!(fast_source(&fb, &fb.spans[0], true).ends_with("one.\n{}"));
+    }
+
+    #[test]
+    fn body_setup_statements_come_from_files_the_body_reads() {
+        // defs.tex is read in the preamble only (the server preamble inlines it already),
+        // chap.tex in the body
+        let mut texts = std::collections::BTreeMap::new();
+        texts.insert(
+            "main.tex".to_string(),
+            "\\documentclass{article}\n\\input{defs}\n\\begin{document}\n\\input{chap}\n\\end{document}\n"
+                .to_string(),
+        );
+        texts.insert(
+            "defs.tex".to_string(),
+            "\\newcommand{\\pre}{P}\n".to_string(),
+        );
+        texts.insert(
+            "chap.tex".to_string(),
+            "\\newcommand{\\kw}{K}\n\nText \\kw.\n".to_string(),
+        );
+        assert_eq!(
+            body_setup_statements(&texts, "main.tex"),
+            vec!["\\newcommand{\\kw}{K}"]
+        );
     }
     const DOC: &str = "\\documentclass{book}\n\\usepackage{microtype}\n\\begin{document}\n\\chapter{One}\n\nFirst paragraph\nspanning two lines.\n\nSecond paragraph.\n\n\\begin{itemize}\n\\item a\n\n\\item b\n\\end{itemize}\n\nThird.\n\\end{document}\n";
 
