@@ -640,7 +640,15 @@ pub(super) fn deliver_layout(
                     })
                     .unwrap_or(false);
             if source_ok
-                && check_engine_unit(&c.kind, &c.everypar, has_ctx, eu.rows(), &eu.flags).is_empty()
+                && check_engine_unit(
+                    &c.kind,
+                    &c.everypar,
+                    has_ctx,
+                    eu.rows(),
+                    &eu.flags,
+                    c.name.as_deref().filter(|_| c.runin),
+                )
+                .is_empty()
             {
                 eligible.push(*id);
                 let strict_ok = files

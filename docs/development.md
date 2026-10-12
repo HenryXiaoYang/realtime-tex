@@ -65,7 +65,7 @@ The integration tests in `crates/rtex-core/tests/`:
 | `standby.rs` | the standby engine gives the same layout as a fresh run |
 | `capture_groups.rs` | paragraphs that start inside a group |
 | `twocolumn.rs` | every unit of a two-column document has its lines as rows |
-| `ieeetran.rs` | IEEEtran's own float boxes compiled live equal the full run |
+| `ieeetran.rs` | IEEEtran's own float boxes compiled live equal the full run; its run-in headings wait |
 | `piccache_live.rs` | cached pictures in the live engine |
 | `internal_error.rs` | a Lua error inside the server is answered, not swallowed |
 | `export.rs` | export equals a clean build; errors are reported |

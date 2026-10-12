@@ -99,9 +99,14 @@ impl Session {
                     }
                 }
                 let c = &eu.captured;
-                for r in
-                    check_engine_unit(&c.kind, &c.everypar, eu.has_context(), eu.rows(), &eu.flags)
-                {
+                for r in check_engine_unit(
+                    &c.kind,
+                    &c.everypar,
+                    eu.has_context(),
+                    eu.rows(),
+                    &eu.flags,
+                    c.name.as_deref().filter(|_| c.runin),
+                ) {
                     reasons.push(reason_str(&r));
                 }
                 let shape_ok = match (&shape, c.kind.as_str()) {

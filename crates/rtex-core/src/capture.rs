@@ -109,6 +109,10 @@ pub struct CapturedUnit {
     pub afterindent: bool,
     #[serde(default)]
     pub noskipsec: bool,
+    /// A heading the class sets run-in (`\paragraph`, IEEEtran's `\subsubsection`): its title
+    /// goes into the next paragraph or list item, whose lines the unit has.
+    #[serde(default)]
+    pub runin: bool,
     #[serde(default)]
     pub nfss: Nfss,
     #[serde(default)]

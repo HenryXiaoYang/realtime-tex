@@ -65,6 +65,7 @@ fn units(name: &str, body: &str) -> Option<Vec<Unit>> {
             eu.has_context(),
             eu.rows(),
             &eu.flags,
+            c.name.as_deref().filter(|_| c.runin),
         ));
         let verdict = reasons.is_empty().then(|| {
             srv.set_context(eu.uid, &eu.context_json()).unwrap();
@@ -126,6 +127,40 @@ fn floats_get_the_class_float_box() {
         ],
         "{units:?}"
     );
+    let differing = differing(&units);
+    assert!(
+        differing.is_empty(),
+        "differ from the full run: {differing:?}"
+    );
+}
+
+/// IEEEtran's `\subsubsection` is a run-in heading, like `\paragraph`: its title is set at the
+/// start of the following paragraph, whose lines the heading's unit then has. The capture sees
+/// it run in, so the heading waits for the full compile and says why, once.
+#[test]
+fn run_in_headings_wait_for_the_full_compile() {
+    let body = format!(
+        "\\section{{Method}}\n{PAR}\n\n\\subsubsection{{Device paths}}\n{PAR}\n\n{PAR}\n\n\
+         \\subsubsection*{{Unnumbered paths}}\n{PAR}\n"
+    );
+    let Some(units) = units("runin", &body) else {
+        return;
+    };
+    let section = units.iter().find(|u| u.name == "heading:section");
+    assert!(section.is_some_and(|u| u.reasons.is_empty()), "{units:?}");
+    let run_in: Vec<&Vec<Reason>> = units
+        .iter()
+        .filter(|u| u.name == "heading:subsubsection")
+        .map(|u| &u.reasons)
+        .collect();
+    assert_eq!(run_in.len(), 2, "{units:?}");
+    for reasons in run_in {
+        let n = reasons
+            .iter()
+            .filter(|r| **r == Reason::RunInHeading("subsubsection".into()))
+            .count();
+        assert_eq!(n, 1, "{units:?}");
+    }
     let differing = differing(&units);
     assert!(
         differing.is_empty(),

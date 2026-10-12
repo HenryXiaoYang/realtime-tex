@@ -253,11 +253,20 @@ local function unit_close()
   if C.outer and tex.currentgrouplevel == C.outer.level then C.outer = snapshot_outer() end
 end
 
+-- A heading the class sets run-in (\paragraph, IEEEtran's \subsubsection): \@xsect leaves
+-- \@noskipsec true until the title is put into the next paragraph or list item, whose lines
+-- the heading's unit then has. When the heading begins the flag is still false, so it is read
+-- when that paragraph or environment begins.
+local function note_runin(cur)
+  if cur and cur.kind == "heading" and iftrue("if@noskipsec") then cur.runin = true end
+end
+
 -- para/begin hook: start of a paragraph (horizontal mode just entered).
 function C.parbegin()
   local nest = tex.nest.ptr
   local ep = tex.gettoks("everypar")
   local cur = C.cur
+  note_runin(cur)
   -- a top-level paragraph starting inside a group: font and color from outside the group
   local outer = (nest == 1 and C.outer and tex.currentgrouplevel > C.outer.level) and C.outer or nil
   if nest == 1 and not C.in_output then
@@ -301,6 +310,7 @@ local DEBUG_ENV = os.getenv("RTEX_DEBUG_ENV")
 function C.envbegin(name)
   local cur = C.cur
   if DEBUG_ENV then texio.write_nl("RTEXENV begin " .. name .. " line " .. tex.inputlineno .. " depth " .. C.env_depth .. " nest " .. tex.nest.ptr .. " cur " .. tostring(cur and cur.uid)) end
+  note_runin(cur)
   if cur and cur.kind == "heading" and tex.nest.ptr == 0 then unit_close(); cur = nil end
   if not cur and tex.nest.ptr == 0 then
     unit_open("env", name, true)

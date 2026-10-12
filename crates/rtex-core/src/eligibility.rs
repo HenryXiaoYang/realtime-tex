@@ -1737,6 +1737,11 @@ pub fn is_vocabulary_reason(r: &Reason) -> bool {
     )
 }
 
+/// Headings the standard classes set run-in, recognised by name in the source (a heading the
+/// layout has not seen yet). Other classes' run-in headings are recognised from the capture
+/// (`check_engine_unit`).
+const RUN_IN_HEADINGS: &[&str] = &["paragraph", "subparagraph"];
+
 pub fn classify_source(src: &str, policy: &Policy) -> (UnitShape, Vec<Reason>) {
     classify_source_with(src, policy, policy.permissive)
 }
@@ -1757,7 +1762,7 @@ pub fn classify_source_with(
     }
     let (shape, heading_base) = unit_shape(&text, policy);
     let run_in = match &shape {
-        UnitShape::Heading(h) if h == "paragraph" || h == "subparagraph" => Some(h.clone()),
+        UnitShape::Heading(h) if RUN_IN_HEADINGS.contains(&h.as_str()) => Some(h.clone()),
         _ => None,
     };
     let mut scan = Scan {
@@ -2616,14 +2621,20 @@ pub fn everypar_allowed(ep: &str) -> bool {
 }
 
 /// Engine-side check of a unit from the capture: `everypar` pattern, node flags, members.
+/// `run_in`: the heading's name when the capture saw it set run-in (`CapturedUnit::runin`).
 pub fn check_engine_unit(
     kind: &str,
     everypar: &str,
     has_context: bool,
     rows: i64,
     flags: &std::collections::BTreeMap<String, i64>,
+    run_in: Option<&str>,
 ) -> Vec<Reason> {
     let mut reasons = Vec::new();
+    // `classify_source` reports the run-in headings it knows by name from the source
+    if let Some(h) = run_in.filter(|h| !RUN_IN_HEADINGS.contains(h)) {
+        reasons.push(Reason::RunInHeading(h.to_string()));
+    }
     if !everypar_allowed(everypar) {
         reasons.push(Reason::NonDefaultEverypar);
     }
@@ -3128,11 +3139,40 @@ mod tests {
         assert!(!everypar_allowed("\\@itemlabel"));
         let mut flags = std::collections::BTreeMap::new();
         flags.insert("ins".to_string(), 1);
-        assert!(check_engine_unit("par", "", true, 3, &flags).is_empty());
+        assert!(check_engine_unit("par", "", true, 3, &flags, None).is_empty());
         flags.insert("dir".to_string(), 1);
         assert_eq!(
-            check_engine_unit("par", "", true, 3, &flags),
+            check_engine_unit("par", "", true, 3, &flags, None),
             vec![Reason::EngineFlag("dir=1".into())]
         );
+    }
+    #[test]
+    fn run_in_headings_from_the_capture() {
+        let p = pol();
+        let flags = BTreeMap::new();
+        // a heading the capture saw set run-in, whatever its name (IEEEtran's \subsubsection)
+        assert_eq!(
+            check_engine_unit("heading", "", true, 2, &flags, Some("subsubsection")),
+            vec![Reason::RunInHeading("subsubsection".into())]
+        );
+        assert!(check_engine_unit("heading", "", true, 2, &flags, None).is_empty());
+        // each heading says so once, whether the source, the capture or both know it is run-in
+        for (src, run_in, name) in [
+            (
+                "\\subsubsection{Paths}",
+                Some("subsubsection"),
+                "subsubsection",
+            ),
+            ("\\paragraph{Paths.}", Some("paragraph"), "paragraph"),
+            ("\\paragraph{Paths.}", None, "paragraph"),
+        ] {
+            let mut r = classify_source(src, &p).1;
+            r.extend(check_engine_unit("heading", "", true, 2, &flags, run_in));
+            assert_eq!(
+                r,
+                vec![Reason::RunInHeading(name.into())],
+                "{src} {run_in:?}"
+            );
+        }
     }
 }

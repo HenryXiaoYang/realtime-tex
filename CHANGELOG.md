@@ -24,6 +24,9 @@
 - A table edited live in IEEEtran keeps the class's `\footnotesize`. The live engine set every
   float box like the LaTeX kernel, in `\normalsize`; it now uses the float box the class sets
   up for tables and figures.
+- IEEEtran's `\subsubsection`, a run-in heading like `\paragraph`, waits for the next pass
+  instead of going live without the paragraph its title shares a line with. rtex knew run-in
+  headings only by name; the capture now records which headings the class sets run-in.
 
 ## 0.0.3 (2026-10-11)
 

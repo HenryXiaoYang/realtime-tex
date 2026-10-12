@@ -42,7 +42,7 @@ If not, the unit waits for the pass and you are told why.
 | `wrapfigure`, multicolumn text, a paragraph that continues after a float in the same TeX paragraph | Placed by the page builder, not by the paragraph. |
 | Setup lines on their own between paragraphs (`\newcommand`, `\setlength`, `\definecolor`, `\lstset`, …) | rtex loads them with the preamble, so macros defined there work live everywhere. Editing them is like editing the preamble: the live engine restarts. |
 | `\setlength` or `\renewcommand` at the top level of a paragraph, next to its text | It changes how everything after it is typeset. Inside a group or an environment, it is fine. |
-| Run-in headings (`\paragraph`, `\subparagraph`) | The heading shares its line with the following paragraph. |
+| Run-in headings (`\paragraph`, `\subparagraph`, IEEEtran's `\subsubsection`) | The heading shares its line with the following paragraph. |
 | A list that continues an earlier one (enumitem `resume`, `series`) | The earlier list's count is not a LaTeX counter. |
 | Paragraphs inside `tcolorbox`, text printed from Lua (`\directlua`, `luacode`) | rtex cannot attribute those lines to a source span. |
 | Text whose output depends on state built up earlier in the document that rtex does not restore | The probe sees the difference, and the unit waits for the pass. |
