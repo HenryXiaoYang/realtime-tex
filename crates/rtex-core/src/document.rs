@@ -77,6 +77,9 @@ pub const BLOCK_ENVS: &[&str] = &[
     "spacing",
     // manual bibliography: its \section* heading and \bibitem list are one unit
     "thebibliography",
+    // IEEEtran's index terms and its description list (nomenclature)
+    "IEEEkeywords",
+    "IEEEdescription",
     // pictures: a top-level picture is a unit of its own (blank lines inside it never split it)
     "tikzpicture",
     "circuitikz",

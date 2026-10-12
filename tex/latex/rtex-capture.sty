@@ -21,6 +21,7 @@
 \AddToHook{cmd/@outputpage/after}{\rtex@outend}
 % the whole output routine, as packages left it
 \AddToHook{begindocument/end}{\output\expandafter{\expandafter\rtex@outbegin\the\output\rtex@outend}}
+\AddToHook{cmd/@xfloat/after}{\directlua{rtex_capture.floatbox()}}
 \AddToHook{cmd/@afterheading/before}{\directlua{rtex_capture.afterheading()}}
 \AddToHook{enddocument/afterlastpage}{\directlua{rtex_capture.finish()}}
 % Unit boundaries: block environments and sectioning commands. Extra block environments

@@ -1,0 +1,177 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{fontspec}
+\setmainfont{TeX Gyre Termes}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{cite}
+
+\begin{document}
+\title{Zone-Based Reliability Assessment of\\ Reconfigurable Distribution Networks}
+\author{Alice~Zhang and Bob~Li}
+\maketitle
+
+\begin{abstract}
+Reliability assessment of distribution networks usually assumes a fixed topology, while
+operators reconfigure feeders and transfer loads many times a day. This paper groups the
+buses between switching devices into zones whose internal structure never changes, and
+expresses the supply relations between zones as a sparse matrix. Reliability indices of every
+load point then follow from matrix products, without a new search of the network after each
+switching operation. Tests on the IEEE 33-bus system and on interconnected feeders show that the
+indices agree with an enumeration method while the computation time drops by an order of
+magnitude.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Distribution network, reliability assessment, network reconfiguration, switching zones.
+\end{IEEEkeywords}
+
+\section*{Nomenclature}
+
+\subsubsection*{Sets and Indices}
+\begin{IEEEdescription}[\IEEEusemathlabelsep\IEEEsetlabelwidth{$\mathcal{Z},\mathcal{K}$}]
+\item[$\mathcal{N},\mathcal{L}$] Sets of buses and of branches.
+\item[$\mathcal{Z},\mathcal{K}$] Sets of zones and of switching devices.
+\item[$z,k,j$] Indices of zones, switching devices and load points.
+\end{IEEEdescription}
+
+\subsubsection*{Parameters}
+\begin{IEEEdescription}[\IEEEusemathlabelsep\IEEEsetlabelwidth{$\mathcal{Z},\mathcal{K}$}]
+\item[$\lambda_z$] Failure rate of the branches in zone $z$, in failures per year.
+\item[$r_z$] Mean repair time of a failure in zone $z$, in hours.
+\item[$N_j$] Number of customers at load point $j$.
+\end{IEEEdescription}
+
+\subsubsection*{Variables}
+\begin{IEEEdescription}[\IEEEusemathlabelsep\IEEEsetlabelwidth{$\mathcal{Z},\mathcal{K}$}]
+\item[$\mathbf{B}$] Supply matrix; $B_{kz}=1$ when device $k$ lies on the path that feeds
+  zone $z$.
+\item[$U_j$] Annual unavailability of load point $j$, in hours per year.
+\end{IEEEdescription}
+
+\section{Introduction}
+Distribution networks are planned as meshed structures but operated radially. Normally open tie
+switches allow the operator to move loads between feeders, and a fault is cleared by opening the
+nearest protective device and closing a tie switch so that healthy sections are restored. Each
+of these operations changes which devices a customer depends on, and therefore its reliability.
+
+Analytical methods evaluate the failure modes of each component and their effect on every load
+point~\cite{billinton1996}. They are accurate, but they rebuild the upstream and downstream
+relations of all devices whenever the topology changes. Simulation methods sample the operating
+history instead~\cite{allan1991}, which suits planning studies better than the short horizon of
+operation.
+
+This paper observes that the buses between two switching devices always share the same supply
+path. We call such a group a zone and show that the reliability indices of all load points can
+be written in terms of a matrix of zone-to-device relations. The contributions are as follows.
+First, the network is reduced to its zones once, before operation starts. Second, the supply
+matrix is updated by local operations when a switch changes state. Third, transfers over tie
+lines are included in the same matrix expressions.
+
+\section{Zone Model}
+\subsection{Zones and Supply Paths}
+A zone is a maximal set of buses connected by branches that contain no switching device.
+Because no branch inside a zone can be opened, all buses of a zone are supplied through the same
+sequence of devices. Let $\mathcal{Z}$ be the set of zones and $\mathcal{K}$ the set of
+switching devices. The supply matrix $\mathbf{B}$ has one row per device and one column per
+zone, with
+\begin{equation}
+B_{kz} =
+\begin{cases}
+1, & \text{if device $k$ lies on the supply path of zone $z$,}\\
+0, & \text{otherwise.}
+\end{cases}
+\label{eq:supply}
+\end{equation}
+For a radial configuration each column of $\mathbf{B}$ describes a path from a substation to the
+zone, so the number of nonzero entries grows with the depth of the feeder rather than with its
+number of buses.
+
+\subsubsection{Fault Isolation}
+When a branch in zone $z$ fails, the nearest upstream protective device opens and every zone it
+feeds is interrupted. The zones downstream of the isolating switch are then restored through a
+tie switch when one is available, so their outage lasts only the switching time.
+
+\subsubsection{Restoration Order}
+Zones upstream of the fault are restored first by reclosing the protective device after the
+faulted zone has been isolated. The order does not change the indices of the faulted zone, whose
+customers wait for the repair in every case.
+
+\subsection{Reliability Indices}
+With the supply matrix the annual unavailability of load point $j$ in zone $z(j)$ is
+\begin{align}
+U_j &= \sum_{z \in \mathcal{Z}} \lambda_z\, t_{z,z(j)}, \label{eq:unavail}\\
+t_{z,z'} &=
+\begin{cases}
+r_z, & z' = z,\\
+s, & z' \text{ restored through a tie switch},
+\end{cases}\nonumber
+\end{align}
+where $s$ is the switching time. The system average interruption duration index follows from
+\eqref{eq:unavail} as
+\begin{equation}
+\mathrm{SAIDI} = \frac{\sum_j N_j U_j}{\sum_j N_j}.
+\label{eq:saidi}
+\end{equation}
+Only the columns of $\mathbf{B}$ that belong to zones affected by a switching operation change,
+so the indices are updated in time proportional to the size of those zones.
+
+\begin{table}[!t]
+\caption{Test Systems}
+\label{tab:systems}
+\centering
+\begin{tabular}{lrrr}
+\toprule
+System & Buses & Zones & Tie switches\\
+\midrule
+IEEE 33-bus & 33 & 8 & 5\\
+Two feeders & 66 & 15 & 7\\
+Three feeders & 135 & 24 & 11\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Case Studies}
+The method was applied to the systems listed in Table~\ref{tab:systems}. Failure rates and
+repair times follow the data of~\cite{allan1991}, and every load point has the same number of
+customers. The switching time of tie switches is one hour.
+
+\begin{figure}[!t]
+\centering
+\rule{0.8\columnwidth}{0.4\columnwidth}
+\caption{Zones of the IEEE 33-bus system. Each shaded block is a zone; tie switches are drawn
+dashed.}
+\label{fig:zones}
+\end{figure}
+
+\subsubsection{IEEE 33-Bus System}
+Fig.~\ref{fig:zones} shows the eight zones of the IEEE 33-bus system. The supply matrix has
+eight columns and twelve rows, against thirty-three buses in the original network. The SAIDI
+computed from \eqref{eq:saidi} equals the value of the enumeration method to four digits.
+
+\subsubsection{Interconnected Feeders}
+For the three-feeder system the method evaluates all configurations reachable by one switching
+operation in a fraction of the time the enumeration method needs for a single one. The gain grows
+with the number of buses per zone, since the matrix size depends on the zones only.
+
+Larger feeders keep the same structure: long laterals without switches become single zones, and
+the work per operation stays small. This makes the indices available after every switching
+operation, which is what operational reliability assessment requires.
+
+\section{Conclusion}
+Grouping buses into zones delimited by switching devices turns reliability assessment of a
+reconfigurable distribution network into operations on a small supply matrix. The indices agree
+with an enumeration method and are obtained much faster, so they can follow the network through
+every reconfiguration. Future work will extend the zones to networks with distributed generation
+that can supply islands during outages.
+
+\begin{thebibliography}{1}
+\bibitem{billinton1996}
+R.~Billinton and R.~N. Allan, \emph{Reliability Evaluation of Power Systems}, 2nd~ed.
+New York, NY, USA: Plenum, 1996.
+\bibitem{allan1991}
+R.~N. Allan, R.~Billinton, I.~Sjarief, L.~Goel, and K.~S. So, ``A reliability test system for
+educational purposes---basic distribution system data and results,'' \emph{IEEE Trans. Power
+Syst.}, vol.~6, no.~2, pp. 813--820, May 1991.
+\end{thebibliography}
+\end{document}

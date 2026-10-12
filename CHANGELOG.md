@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-
 ### Fixed
 
 - A figure or table with a comment line or `\vspace` right above it, or a comment after its
@@ -20,6 +19,27 @@
   font setup kept the bold math version's alphabets when math returned to the normal version,
   so `\mathbf{M}` came out in the wrong font. After a footnote, TeX could even loop on it until
   the engine stopped, and the paragraph was not live again until the preamble changed.
+- The first page of an IEEEtran document is drawn from its display list, not from the
+  PDF. Under LuaLaTeX the class writes a `\special{papersize=…}`, which LuaTeX's PDF backend
+  ignores, and rtex took it for something a display list cannot show. Only `pdf:` specials,
+  the ones the backend draws, mark a page as degraded now.
+- A table edited live in IEEEtran keeps the class's `\footnotesize`. The live engine set every
+  float box like the LaTeX kernel, in `\normalsize`; it now uses the float box the class sets
+  up for tables and figures.
+- IEEEtran's `\subsubsection`, a run-in heading like `\paragraph`, waits for the next pass
+  instead of going live without the paragraph its title shares a line with. rtex knew run-in
+  headings only by name; the capture now records which headings the class sets run-in.
+
+### New
+
+- IEEEtran's `IEEEkeywords` and `IEEEdescription` (a nomenclature, with `\IEEEsetlabelwidth`
+  and `\IEEEusemathlabelsep`) update as you type, like the standard lists. Commands a document
+  class provides can be allowed like a package's; these two are allowed with IEEEtran only.
+
+### CI and repository
+
+- The corpus has an IEEEtran journal paper (two columns, a nomenclature, run-in headings,
+  floats). CI checks that at least 18 of its units are live and that all of them are exact.
 
 ## 0.0.4 (2026-10-12)
 

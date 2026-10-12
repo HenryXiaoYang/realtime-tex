@@ -23,7 +23,7 @@ PACKAGES=(
   lipsum biber bibtex biblatex logreq xstring etoolbox
   pgf hyperref csquotes
   enumitem multirow ulem cancel wrapfig titlesec siunitx algorithms algorithmicx framed soul
-  pgfplots circuitikz xecjk xypic gensymb regexpatch haranoaji luatexja
+  pgfplots circuitikz xecjk xypic gensymb regexpatch haranoaji luatexja ieeetran
 )
 
 WINDOWS=0

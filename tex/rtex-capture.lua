@@ -25,7 +25,7 @@ C.INT_PARAMS, C.DIM_PARAMS, C.GLUE_PARAMS = INT_PARAMS, DIM_PARAMS, GLUE_PARAMS
 C.BLOCK_ENVS = { "itemize", "enumerate", "description", "quote", "quotation", "verse", "center",
   "flushleft", "flushright", "figure", "figure*", "table", "table*", "abstract", "tabbing",
   "proof", "verbatim", "verbatim*", "lstlisting", "Verbatim", "alltt", "spacing", "thebibliography",
-  "tikzpicture", "circuitikz", "pgfpicture" }
+  "IEEEkeywords", "IEEEdescription", "tikzpicture", "circuitikz", "pgfpicture" }
 C.HEADINGS = { "part", "chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph" }
 local TWO_PAR_HEADINGS = { part = true, chapter = true }
 local UNSET = -0x7FFFFFFF
@@ -65,7 +65,10 @@ end
 -- \def\H{4} before a picture): their meaning at each unit is captured like the counters and
 -- replayed by the server, so a setting changed mid-document reaches the fast path at the right
 -- place. The names come from scanning the document's source files for definitions.
-local tracked_macros = { "arraystretch", "baselinestretch" }
+-- \@floatboxreset is what \@xfloat runs at the top of a float box; classes redefine it locally
+-- in \table and \figure (IEEEtran: \footnotesize tables), so it is recorded for each float
+-- (C.floatbox) and the server replays it.
+local tracked_macros = { "arraystretch", "baselinestretch", "@floatboxreset" }
 local prev_macros = {}
 -- Glossary entries the source defines (\newglossaryentry, \newacronym, \newabbreviation):
 -- their first-use switch \ifglo@<label>@flag is set globally by the first \gls, so the long
@@ -250,11 +253,20 @@ local function unit_close()
   if C.outer and tex.currentgrouplevel == C.outer.level then C.outer = snapshot_outer() end
 end
 
+-- A heading the class sets run-in (\paragraph, IEEEtran's \subsubsection): \@xsect leaves
+-- \@noskipsec true until the title is put into the next paragraph or list item, whose lines
+-- the heading's unit then has. When the heading begins the flag is still false, so it is read
+-- when that paragraph or environment begins.
+local function note_runin(cur)
+  if cur and cur.kind == "heading" and iftrue("if@noskipsec") then cur.runin = true end
+end
+
 -- para/begin hook: start of a paragraph (horizontal mode just entered).
 function C.parbegin()
   local nest = tex.nest.ptr
   local ep = tex.gettoks("everypar")
   local cur = C.cur
+  note_runin(cur)
   -- a top-level paragraph starting inside a group: font and color from outside the group
   local outer = (nest == 1 and C.outer and tex.currentgrouplevel > C.outer.level) and C.outer or nil
   if nest == 1 and not C.in_output then
@@ -298,11 +310,22 @@ local DEBUG_ENV = os.getenv("RTEX_DEBUG_ENV")
 function C.envbegin(name)
   local cur = C.cur
   if DEBUG_ENV then texio.write_nl("RTEXENV begin " .. name .. " line " .. tex.inputlineno .. " depth " .. C.env_depth .. " nest " .. tex.nest.ptr .. " cur " .. tostring(cur and cur.uid)) end
+  note_runin(cur)
   if cur and cur.kind == "heading" and tex.nest.ptr == 0 then unit_close(); cur = nil end
   if not cur and tex.nest.ptr == 0 then
     unit_open("env", name, true)
   end
   C.env_depth = C.env_depth + 1
+end
+-- cmd/@xfloat/after hook (inside the float box, \figure* and \table* included): the float
+-- box reset as the float environment set it up, recorded in the float's unit
+function C.floatbox()
+  local cur = C.cur
+  if not (cur and cur.kind == "env") then return end
+  local m = meaning("@floatboxreset")
+  if m and prev_macros["@floatboxreset"] ~= m then
+    cur.macros["@floatboxreset"] = m; prev_macros["@floatboxreset"] = m
+  end
 end
 function C.envafter(name)
   if DEBUG_ENV then texio.write_nl("RTEXENV after " .. name .. " line " .. tex.inputlineno .. " depth " .. C.env_depth .. " nest " .. tex.nest.ptr .. " cur " .. tostring(C.cur and C.cur.uid)) end
