@@ -146,7 +146,22 @@ jobs:
           # install it from that local copy
           $work = "$env:RUNNER_TEMP\miktex"
           New-Item -ItemType Directory -Force $work | Out-Null
-          Invoke-WebRequest https://miktex.org/download/win/miktexsetup-x64.zip -OutFile "$work\setup.zip" -MaximumRetryCount 3 -RetryIntervalSec 10
+          # miktexsetup itself: from miktex.org, else the copy the CTAN mirror carries (a versioned
+          # name); a connection timeout is not retried by -MaximumRetryCount, so retry here
+          $ctan = "https://mirror.clarkson.edu/ctan/systems/win32/miktex/setup/windows-x64/"
+          $got = $false
+          foreach ($i in 1..3) {
+            try {
+              Invoke-WebRequest https://miktex.org/download/win/miktexsetup-x64.zip -OutFile "$work\setup.zip" -TimeoutSec 60
+              $got = $true; break
+            } catch { Write-Output "miktex.org: $_" }
+            try {
+              $zip = (Invoke-WebRequest $ctan -TimeoutSec 60).Links.href | Where-Object { $_ -match '^miktexsetup-.*-x64\.zip$' } | Select-Object -Last 1
+              if ($zip) { Invoke-WebRequest "$ctan$zip" -OutFile "$work\setup.zip" -TimeoutSec 120; $got = $true; break }
+            } catch { Write-Output "CTAN: $_" }
+            Start-Sleep -Seconds 20
+          }
+          if (-not $got) { Write-Error "could not download miktexsetup"; exit 1 }
           Expand-Archive "$work\setup.zip" -DestinationPath $work -Force
           $setup = (Get-ChildItem $work -Filter miktexsetup_standalone.exe -Recurse | Select-Object -First 1).FullName
           foreach ($i in 1..3) {
