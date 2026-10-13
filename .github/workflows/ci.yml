@@ -152,7 +152,7 @@ jobs:
           $got = $false
           foreach ($i in 1..3) {
             try {
-              Invoke-WebRequest https://miktex.org/download/win/miktexsetup-x64.zip -OutFile "$work\setup.zip" -TimeoutSec 60
+              Invoke-WebRequest https://miktex.invalid/download/win/miktexsetup-x64.zip -OutFile "$work\setup.zip" -TimeoutSec 60
               $got = $true; break
             } catch { Write-Output "miktex.org: $_" }
             try {
