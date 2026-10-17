@@ -24,6 +24,7 @@ PACKAGES=(
   pgf hyperref csquotes
   enumitem multirow ulem cancel wrapfig titlesec siunitx algorithms algorithmicx framed soul
   pgfplots circuitikz xecjk xypic gensymb regexpatch haranoaji luatexja ieeetran
+  newtx txfonts kastrup
 )
 
 WINDOWS=0

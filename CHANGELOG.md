@@ -29,6 +29,12 @@
 - IEEEtran's `\subsubsection`, a run-in heading like `\paragraph`, waits for the next pass
   instead of going live without the paragraph its title shares a line with. rtex knew run-in
   headings only by name; the capture now records which headings the class sets run-in.
+- Math set with newtxmath, or any font whose TFM comes with a `.vf`, is right in the live
+  display list. LuaTeX reports such a font as a real font and reads its `.vf` only when it
+  writes the PDF, so rtex did not expand it: glyphs named `ntxmi`, `ntxsy`, … with their
+  virtual character codes, which have no outline file in `pdftex.map`, and a host drew
+  the wrong characters (`+` came out as `Ï`). rtex now reads the `.vf` itself and names the
+  real fonts (`NewTXMI`, `txsys`, …).
 
 ### New
 
@@ -40,6 +46,8 @@
 
 - The corpus has an IEEEtran journal paper (two columns, a nomenclature, run-in headings,
   floats). CI checks that at least 18 of its units are live and that all of them are exact.
+- CI installs newtx (with txfonts and kastrup) for a test that a live edit in newtxmath math
+  names the real fonts, not the virtual ones.
 
 ## 0.0.4 (2026-10-12)
 
