@@ -316,7 +316,8 @@ pub struct DisplayList {
     pub kind: String,
     #[serde(default)]
     pub unit: String,
-    #[serde(default)]
+    /// Font ids → descriptions (a page without glyphs has none: an empty Lua table arrives as `[]`).
+    #[serde(default, deserialize_with = "map_or_empty_array")]
     pub fonts: BTreeMap<String, FontDesc>,
     #[serde(default)]
     pub lines: Vec<Line>,
