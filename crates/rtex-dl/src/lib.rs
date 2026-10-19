@@ -316,7 +316,8 @@ pub struct DisplayList {
     pub kind: String,
     #[serde(default)]
     pub unit: String,
-    #[serde(default)]
+    /// Font ids → descriptions (a page without glyphs has none: an empty Lua table arrives as `[]`).
+    #[serde(default, deserialize_with = "map_or_empty_array")]
     pub fonts: BTreeMap<String, FontDesc>,
     #[serde(default)]
     pub lines: Vec<Line>,
@@ -420,5 +421,16 @@ mod tests {
         let back = serde_json::to_string(&dl).unwrap();
         let dl2 = DisplayList::from_json(&back).unwrap();
         assert_eq!(dl, dl2);
+    }
+
+    #[test]
+    fn page_without_glyphs_has_empty_fonts_array() {
+        // A blank page (e.g. \cleardoublepage with \pagestyle{empty}): Lua encodes the empty
+        // fonts table as [].
+        let s =
+            r#"{"kind":"page","unit":"sp","fonts":[],"lines":[],"other":[],"flags":[],"glyphs":0}"#;
+        let dl = DisplayList::from_json(s).unwrap();
+        assert!(dl.fonts.is_empty());
+        assert_eq!(dl.glyph_count(), 0);
     }
 }
