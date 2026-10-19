@@ -90,6 +90,51 @@ M.tex_round = tex_round
 
 -- Font metrics cache: width per (font, char) and glyph index.
 local font_cache = {}
+
+-- Base fonts of TFM virtual fonts, defined on first use: "name@size" -> font id, or false when
+-- the font cannot be loaded.
+-- font.getfont does not return a font defined from Lua with its name, so the cache entry is built
+-- from the TFM table itself.
+local vf_base_ids = {}
+local function vf_base_font(name, size)
+  local key = name .. "@" .. size
+  local id = vf_base_ids[key]
+  if id == nil then
+    id = false
+    local ok, t = pcall(font.read_tfm, name, size)
+    if ok and t then
+      local chars = t.characters
+      local ok2, nid = pcall(font.define, t)
+      if ok2 and nid then
+        id = nid
+        font_cache[nid] = { tfm = { name = name, size = size, designsize = t.designsize,
+                                    type = "real", format = "unknown",
+                                    slant = 0, extend = 1000, squeeze = 1000 },
+                            chars = chars or {}, widths = {}, idx = {}, ew = {}, virtual = false }
+      end
+    end
+    vf_base_ids[key] = id
+  end
+  return id or nil
+end
+
+-- A TFM font with a .vf file (newtxmath's ntxmi/ntxsy/ntxexx, ...) comes back from font.getfont
+-- as type "real" without commands: the PDF backend reads the .vf only at shipout. Read it here
+-- so emit_virtual can expand its characters into the real fonts. Returns chars, fonts or nil.
+local function tfm_virtual(tfm)
+  if tfm.type == "virtual" or tfm.filename or not tfm.name or not tfm.size then return nil end
+  if not kpse.find_file(tfm.name, "vf") then return nil end
+  local ok, vf = pcall(font.read_vf, tfm.name, tfm.size)
+  if not ok or not vf or not vf.characters or not vf.fonts then return nil end
+  local fonts = {}
+  for i, bf in ipairs(vf.fonts) do
+    local id = bf.name and vf_base_font(bf.name, bf.size or tfm.size)
+    if not id then return nil end
+    fonts[i] = { id = id }
+  end
+  return vf.characters, fonts
+end
+
 local function font_entry(f)
   local e = font_cache[f]
   if not e then
@@ -97,6 +142,10 @@ local function font_entry(f)
     e = { tfm = tfm, chars = tfm and tfm.characters or {}, widths = {}, idx = {}, ew = {},
           virtual = tfm and tfm.type == "virtual" or false,
           fonts = tfm and tfm.fonts or nil }
+    if tfm and not e.virtual then
+      local vchars, vfonts = tfm_virtual(tfm)
+      if vchars then e.chars, e.fonts, e.virtual = vchars, vfonts, true end
+    end
     font_cache[f] = e
   end
   return e
