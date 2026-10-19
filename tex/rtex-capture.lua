@@ -161,7 +161,8 @@ local function nfss()
 end
 
 function C.setup(opts)
-  C.jobname = opts.jobname
+  -- LuaTeX quotes a job name that has spaces ("my file"); the files rtex reads have none
+  C.jobname = (opts.jobname:gsub('"', ''))
   C.attr_par = luatexbase.new_attribute("rtex_par")
   C.attr_line = luatexbase.new_attribute("rtex_line")
   C.attr_unit = luatexbase.new_attribute("rtex_unit")
@@ -193,10 +194,10 @@ function C.begin_document()
   prev_thefmt = {}
   prev_macros = {}
   local seen = {}
-  scan_definitions(tex.jobname .. ".tex", seen, 0)
+  scan_definitions(C.jobname .. ".tex", seen, 0)
   -- index commands are recorded afresh by each run (index_command)
   os.remove((os.getenv("RTEX_CAPTURE_DIR") or os.getenv("TEXMF_OUTPUT_DIRECTORY") or ".") ..
-            "/" .. tex.jobname .. ".rtex-idxcmd")
+            "/" .. C.jobname .. ".rtex-idxcmd")
   -- a body-only pass (standby engine) has the preamble in rtex-preamble.tex, the main file's
   -- preamble lines blanked: definitions made there (glossary entries) are read from it
   local pre = kpse.find_file("rtex-preamble.tex")

@@ -1,6 +1,6 @@
 //! A session whose project and build directories have spaces and non-ASCII characters (a
 //! Windows user profile such as `C:\Users\Lê Anh\AppData\…`, where editors keep their storage),
-//! with a CRLF document. Skipped without lualatex.
+//! with a CRLF main file whose name has a space. Skipped without lualatex.
 
 use rtex_core::{Convergence, Edit, Event, Session, SessionConfig};
 use std::time::Duration;
@@ -18,8 +18,8 @@ fn live_editing_works_with_spaces_unicode_and_crlf() {
     let main = "\\documentclass{article}\r\n\\begin{document}\r\nFirst document.\r\n\
                 This is a simple example, with no extra parameters or packages included.\r\n\r\n\
                 love love love\r\n\\end{document}\r\n";
-    std::fs::write(project.join("main.tex"), main).unwrap();
-    let mut cfg = SessionConfig::new(&project, "main.tex");
+    std::fs::write(project.join("my main.tex"), main).unwrap();
+    let mut cfg = SessionConfig::new(&project, "my main.tex");
     cfg.build_dir = root.join("work storage").join("build");
     cfg.fast_budget = Duration::from_millis(5000); // timing is not what this test measures
     let s = Session::open(cfg).unwrap();
@@ -59,7 +59,7 @@ fn live_editing_works_with_spaces_unicode_and_crlf() {
     let at = main.find("love love love").unwrap() + "love love love".len();
     let r = s
         .apply_edit(
-            "main.tex",
+            "my main.tex",
             Edit {
                 start_byte: at,
                 end_byte: at,

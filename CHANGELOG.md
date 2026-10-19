@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- A main file whose name has a space (`my paper.tex`) works. LuaTeX quotes such a job name,
+  and the capture wrote its results under the quoted name, so no layout ever arrived (#8).
 - A figure or table with a comment line or `\vspace` right above it, or a comment after its
   `\end`, compiles in the live engine. The engine looked for `\begin{figure}` only at the very
   start of the unit and for `\end{figure}` only at its very end, so it typeset the `\begin` as
