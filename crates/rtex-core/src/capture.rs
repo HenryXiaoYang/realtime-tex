@@ -292,10 +292,11 @@ pub fn run_capture_with(
 ) -> Result<CaptureResult> {
     let (mut cmd, jobname, out_dir) =
         capture_command(tl, src_dir, main, out_dir, instrumented, unit_envs)?;
+    let hook = crate::texlive::INPUT_PATH_HOOK;
     cmd.arg(if instrumented {
-        format!("\\RequirePackage{{rtex-capture}}\\input{{{main}}}")
+        format!("{hook}\\RequirePackage{{rtex-capture}}\\input{{{main}}}")
     } else {
-        format!("\\input{{{main}}}")
+        format!("{hook}\\input{{{main}}}")
     });
     let t0 = Instant::now();
     let out = cmd.output().context("spawning lualatex")?;

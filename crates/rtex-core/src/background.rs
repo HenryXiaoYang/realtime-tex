@@ -101,10 +101,14 @@ fn copy_tree(
             if ext == "pdf" && built.contains(&path) {
                 continue;
             }
+            // the document's own .aux files are written by the pass; another document's
+            // (\externaldocument{appendix} reads appendix.aux) is an input
+            if ext == "aux" && built.contains(&path.with_extension("pdf")) {
+                continue;
+            }
             if matches!(
                 ext,
-                "aux"
-                    | "log"
+                "log"
                     | "synctex.gz"
                     | "fls"
                     | "fdb_latexmk"
@@ -774,7 +778,8 @@ impl WarmEngine {
         } else {
             ""
         };
-        cmd.arg(format!("{pkg}\\input{{rtex-preamble.tex}}\\directlua{{dofile(kpse.find_file(\"rtex-bg.lua\",\"lua\") or \"rtex-bg.lua\")}}\\input{{{main}}}"));
+        let hook = crate::texlive::INPUT_PATH_HOOK;
+        cmd.arg(format!("{hook}{pkg}\\input{{rtex-preamble.tex}}\\directlua{{dofile(kpse.find_file(\"rtex-bg.lua\",\"lua\") or \"rtex-bg.lua\")}}\\input{{{main}}}"));
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
@@ -887,6 +892,25 @@ mod tests {
         );
         // a second snapshot (files already present) is fine too
         write_snapshot(&project, &files, &dir.join("snap")).unwrap();
+    }
+
+    #[test]
+    fn snapshot_copies_other_documents_aux_only() {
+        let dir = std::env::temp_dir().join(format!("rtex-snap-aux-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let project = dir.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("main.aux"), "stale").unwrap();
+        // read by \externaldocument{appendix}
+        std::fs::write(project.join("appendix.aux"), "labels").unwrap();
+        let mut files = BTreeMap::new();
+        files.insert("main.tex".to_string(), "x".to_string());
+        write_snapshot(&project, &files, &dir.join("snap")).unwrap();
+        assert!(!dir.join("snap/main.aux").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("snap/appendix.aux")).unwrap(),
+            "labels"
+        );
     }
 
     #[test]

@@ -390,8 +390,9 @@ pub struct Session {
 
 impl Session {
     pub fn open(cfg: SessionConfig) -> Result<Session> {
-        let tl = TexLive::discover()?;
+        let mut tl = TexLive::discover()?;
         let project_root = crate::paths::canonical(&cfg.project_root).context("project root")?;
+        tl.project_dir = Some(project_root.clone());
         let cfg = SessionConfig {
             project_root,
             main_file: crate::paths::key(&cfg.main_file),

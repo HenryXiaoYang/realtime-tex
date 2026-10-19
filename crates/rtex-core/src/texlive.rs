@@ -10,7 +10,21 @@ pub struct TexLive {
     pub lualatex: PathBuf,
     /// Repository `tex/` directory holding rtex's Lua and LaTeX files.
     pub rtex_texdir: PathBuf,
+    /// The real project directory, handed to LuaLaTeX as `$RTEX_PROJECT_DIR` (see
+    /// [`INPUT_PATH_HOOK`]).
+    pub project_dir: Option<PathBuf>,
 }
+
+/// TeX run first on every LuaLaTeX command line rtex builds: puts the real project directory on
+/// LaTeX's `\input@path`. Passes run in a copy of the project, so a path that leaves it
+/// (`\input{../shared/x}`, `\graphicspath{{../figures/}}`) would miss; `\input`,
+/// `\IfFileExists` retry a name not found under each `\input@path` entry. graphicx searches
+/// its `\graphicspath` list instead, so at `\begin{document}` each relative entry of it gets a
+/// copy under the project directory too. (No `%`, `#` or `~` here: this is read as TeX.)
+pub const INPUT_PATH_HOOK: &str = concat!(
+    r#"\directlua{local d=os.getenv("RTEX_PROJECT_DIR") if d then token.set_macro("input@path","{"..d.."/}") end}"#,
+    r#"\AddToHook{begindocument/before}{\directlua{local d=os.getenv("RTEX_PROJECT_DIR") local g=token.get_macro("Ginput@path") if d and g then local out=g for e in g:gmatch("{(.-)}") do if not (e:match("^/") or e:match("^[A-Za-z]:")) then out=out.."{"..d.."/"..e.."}" end end token.set_macro("Ginput@path",out) end}}"#
+);
 
 /// Find the directory containing rtex's `tex/` support files: `$RTEX_TEXDIR`, then next to the
 /// running executable as the release archives lay it out (`<prefix>/bin/rtex` with
@@ -67,6 +81,7 @@ impl TexLive {
             bin_dir,
             lualatex,
             rtex_texdir: find_rtex_texdir()?,
+            project_dir: None,
         })
     }
 
@@ -92,6 +107,9 @@ impl TexLive {
             .env("half_error_line", "238");
         if let Some(d) = &self.bin_dir {
             crate::paths::prepend_bin_dir(&mut c, d);
+        }
+        if let Some(p) = &self.project_dir {
+            c.env("RTEX_PROJECT_DIR", tex(p));
         }
         c
     }
