@@ -261,7 +261,7 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
             })
             .ok();
     };
-    if let Err(e) = write_snapshot(&s.cfg.project_root, &texts, &snap_dir) {
+    if let Err(e) = write_snapshot(&s.cfg.project_root, &texts, &s.cfg.main_file, &snap_dir) {
         failed(format!("snapshot: {e}"));
         return;
     }
@@ -798,7 +798,7 @@ pub(super) fn deliver_layout(
 pub(super) fn run_export(s: &Shared, job: u64, out: PathBuf) {
     let (texts, _spans, _rev) = snapshot(s);
     let snap_dir = s.cfg.build_dir.join("export-src");
-    if let Err(e) = write_snapshot(&s.cfg.project_root, &texts, &snap_dir) {
+    if let Err(e) = write_snapshot(&s.cfg.project_root, &texts, &s.cfg.main_file, &snap_dir) {
         s.events
             .send(Event::PdfExported {
                 job_id: job,

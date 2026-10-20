@@ -40,13 +40,24 @@ impl Clone for CaptureResult {
 
 /// Write `files` (relative path → text) under `dir`, copying every other file from `project`
 /// (images, .bib, .cls …) so relative inputs resolve.
-pub fn write_snapshot(project: &Path, files: &BTreeMap<String, String>, dir: &Path) -> Result<()> {
+pub fn write_snapshot(
+    project: &Path,
+    files: &BTreeMap<String, String>,
+    main: &str,
+    dir: &Path,
+) -> Result<()> {
     std::fs::create_dir_all(dir)?;
     // the PDFs built from the document's own sources (main.pdf, a subfile compiled alone):
     // outputs, not inputs. A PDF next to a .tex the document does not read (a standalone
-    // figure's source) is an input and is copied.
-    let built: std::collections::HashSet<PathBuf> = files
-        .keys()
+    // figure's source, or another document such as an appendix the host has open) is an input
+    // and is copied.
+    let mut own = files
+        .get(main)
+        .map(|t| crate::document::transitive_inputs(t, files))
+        .unwrap_or_default();
+    own.insert(main.to_string());
+    let built: std::collections::HashSet<PathBuf> = own
+        .iter()
         .map(|rel| {
             project
                 .join(rel.trim_start_matches("./"))
@@ -725,7 +736,7 @@ pub fn write_body_snapshot(
     let mut files2 = files.clone();
     files2.insert(main.to_string(), padded);
     files2.insert("rtex-preamble.tex".to_string(), pre.to_string());
-    write_snapshot(project, &files2, dir)?;
+    write_snapshot(project, &files2, main, dir)?;
     Ok(crate::document::hash_str(&crate::document::expand_inputs(
         pre, files,
     )))
@@ -877,7 +888,7 @@ mod tests {
         std::fs::write(project.join("a/top.bib"), "bib").unwrap();
         let mut files = BTreeMap::new();
         files.insert("main.tex".to_string(), "edited".to_string());
-        write_snapshot(&project, &files, &dir.join("snap")).unwrap();
+        write_snapshot(&project, &files, "main.tex", &dir.join("snap")).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.join("snap/a/b/file.txt")).unwrap(),
             "nested"
@@ -891,7 +902,7 @@ mod tests {
             "edited"
         );
         // a second snapshot (files already present) is fine too
-        write_snapshot(&project, &files, &dir.join("snap")).unwrap();
+        write_snapshot(&project, &files, "main.tex", &dir.join("snap")).unwrap();
     }
 
     #[test]
@@ -901,12 +912,18 @@ mod tests {
         let project = dir.join("project");
         std::fs::create_dir_all(&project).unwrap();
         std::fs::write(project.join("main.aux"), "stale").unwrap();
+        std::fs::write(project.join("chap.aux"), "stale").unwrap();
         // read by \externaldocument{appendix}
         std::fs::write(project.join("appendix.aux"), "labels").unwrap();
+        std::fs::write(project.join("appendix.pdf"), "built alone").unwrap();
         let mut files = BTreeMap::new();
-        files.insert("main.tex".to_string(), "x".to_string());
-        write_snapshot(&project, &files, &dir.join("snap")).unwrap();
+        files.insert("main.tex".to_string(), "\\include{chap}".to_string());
+        files.insert("chap.tex".to_string(), "x".to_string());
+        // the host sends every open file, also another document the main file does not read
+        files.insert("appendix.tex".to_string(), "x".to_string());
+        write_snapshot(&project, &files, "main.tex", &dir.join("snap")).unwrap();
         assert!(!dir.join("snap/main.aux").exists());
+        assert!(!dir.join("snap/chap.aux").exists());
         assert_eq!(
             std::fs::read_to_string(dir.join("snap/appendix.aux")).unwrap(),
             "labels"
@@ -989,7 +1006,7 @@ mod tests {
         std::fs::write(project.join("images/fig.tex"), "standalone").unwrap();
         std::fs::write(project.join("images/fig.pdf"), "input").unwrap();
         let files = BTreeMap::from([("main.tex".to_string(), "x".to_string())]);
-        write_snapshot(&project, &files, &dir.join("snap")).unwrap();
+        write_snapshot(&project, &files, "main.tex", &dir.join("snap")).unwrap();
         assert!(dir.join("snap/images/fig.pdf").is_file());
         assert!(!dir.join("snap/main.pdf").exists());
         assert!(dir.join("snap/figure.pdf").is_file());
