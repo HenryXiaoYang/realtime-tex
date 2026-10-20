@@ -484,6 +484,27 @@ pub(super) fn layout_failed(s: &Shared, t0: Instant, rev: Revision, msg: String)
         .ok();
 }
 
+/// Withdraw the `fast:<unit>` diagnostics of live-engine failures that a layout of revision
+/// `rev` supersedes (it typeset the failing source or a later one): an empty set per source.
+fn withdraw_fast_failures(s: &Shared, rev: Revision) {
+    let mut withdrawn = Vec::new();
+    s.fast_failures.lock().retain(|par_id, at| {
+        let superseded = *at <= rev;
+        if superseded {
+            withdrawn.push(*par_id);
+        }
+        !superseded
+    });
+    for par_id in withdrawn {
+        s.events
+            .send(Event::Diagnostics {
+                source: format!("fast:{par_id:?}"),
+                items: vec![],
+            })
+            .ok();
+    }
+}
+
 /// Install a pass's capture as the current layout and tell the host. `provisional`: a pass of a
 /// run that is not stable yet (another pass follows); the layout is usable, its convergence is
 /// `Converging`.
@@ -498,6 +519,7 @@ pub(super) fn deliver_layout(
     rev: Revision,
     provisional: bool,
 ) {
+    withdraw_fast_failures(s, rev);
     let mut diagnostics = parse_log(&cap.log);
     for d in &mut diagnostics {
         // the standby reads the preamble from rtex-preamble.tex (same line numbers)
@@ -762,14 +784,13 @@ pub(super) fn deliver_layout(
             .collect()
     };
     let pages_total = cap.json.pages;
-    if !diagnostics.is_empty() {
-        s.events
-            .send(Event::Diagnostics {
-                source: "background".into(),
-                items: diagnostics,
-            })
-            .ok();
-    }
+    // also when empty: the set replaces the previous pass's, so fixed errors go away
+    s.events
+        .send(Event::Diagnostics {
+            source: "background".into(),
+            items: diagnostics,
+        })
+        .ok();
     // the fallback is named whenever the layout has a degraded page, changed in this
     // layout or not: a host that keeps one PDF per layout needs the current file
     let any_degraded = {

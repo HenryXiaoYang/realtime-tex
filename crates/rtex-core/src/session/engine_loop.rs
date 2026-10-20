@@ -738,6 +738,11 @@ pub(super) fn engine_failed(
             }],
         })
         .ok();
+    // nothing on the live path reports this unit again (it stays on the background path): the
+    // next layout of this revision or a later one withdraws the diagnostic
+    s.fast_failures
+        .lock()
+        .insert(req.par_id, req.versions.source_revision);
     s.engine_generation.fetch_add(1, Ordering::SeqCst);
     // the paragraph goes to the background path, and stays there until the preamble changes:
     // retrying a unit that hung or crashed the engine would kill the server on every keystroke

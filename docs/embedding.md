@@ -142,7 +142,7 @@ contains it. Keep the newer ones and move them to the new `placements`.
 | Event | Meaning |
 |---|---|
 | `BackgroundScheduled { par_id, reasons }` | this edit will appear with the next pass, not live. `reasons` is human-readable ("unverified: …", "last fast compile took 63 ms, over the budget"). |
-| `Diagnostics { source, items }` | errors and warnings with file, line, message and the offending source line, from a pass or the live engine |
+| `Diagnostics { source, items }` | errors and warnings with file, line, message and the offending source line, from a pass or the live engine. Each event replaces the earlier `items` of its `source`; an empty list clears it. Every finished pass sends `background` (empty when clean). A live-engine failure is reported as `fast:ParaId(n)` and withdrawn (empty `items`) by the first layout of the failing revision or a later one. |
 | `EngineState { engine_generation, state, reason }` | the live engine is `Starting`, `Ready`, `Restarting` or has `Failed`. Status bar material. |
 | `PdfExported { job_id, path, status, converged, passes }` | an export finished. Only `converged: true` promises the same PDF as a clean LuaLaTeX build. |
 
