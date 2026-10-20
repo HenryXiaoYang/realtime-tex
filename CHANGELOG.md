@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The paragraph after a run-in heading's own paragraph (the second paragraph under an IEEEtran
+  `\subsubsection` or a `\paragraph`) is live, and so is a heading right after a run-in
+  heading's paragraph. They start under the heading's `\everypar`, which the live engine cannot
+  replay; by then it only restores `\clubpenalty` and empties itself, so the capture records it
+  as the default `\everypar`.
+
 ## 0.0.5 (2026-10-19)
 
 ### Fixed
