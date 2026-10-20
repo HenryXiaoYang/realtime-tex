@@ -539,6 +539,10 @@ pub(super) fn deliver_layout(
     } else {
         CompileStatus::Ok
     };
+    if compile == CompileStatus::Ok {
+        // the state the live engine starts units from no longer comes from text that crashed it
+        s.live.lock().on_clean_pass(rev);
+    }
     if compile == CompileStatus::Failed {
         s.events
             .send(Event::Diagnostics {

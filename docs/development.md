@@ -120,8 +120,11 @@ Set `debug_dir` (`SessionConfig::debug_dir`, C `"debug_dir"`, `rtex serve --debu
 time and total time. With `RTEX_TRACE_MACROS=1` the server also runs with `\tracingmacros=1`.
 That is much slower, so the watchdog is ten times longer while it is on.
 
-A unit that hangs or crashes the engine is not tried again until the preamble changes. Without
-that, every keystroke in it would kill the engine.
+A unit that hangs or crashes the engine is not tried again until it is edited after a pass that
+compiled without errors. Without that, every keystroke in it would kill the engine; without the
+clean pass, the engine would start it from state the broken text left behind. After three
+crashes of the same unit in a row (with no live compile of it in between), its edits wait for
+the preamble to change instead.
 
 ## Conventions
 
