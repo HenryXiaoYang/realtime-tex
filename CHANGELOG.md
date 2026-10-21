@@ -7,12 +7,18 @@
 - Live edits no longer stop for good after a paragraph that typesets no rows (only a `\label`,
   `\vspace` or `\noindent`) is typed next to another paragraph typed fresh, before the
   background pass. Its placement read the first of no rows and the engine thread panicked
-  ("index out of bounds" in `layout.rs`), so no edit was live again until the engine restarted.
+  ("index out of bounds" in `layout.rs`), so no edit was live again until the engine restarted
+  (#13).
 - The paragraph after a run-in heading's own paragraph (the second paragraph under an IEEEtran
   `\subsubsection` or a `\paragraph`) is live, and so is a heading right after a run-in
   heading's paragraph. They start under the heading's `\everypar`, which the live engine cannot
   replay; by then it only restores `\clubpenalty` and empties itself, so the capture records it
-  as the default `\everypar`.
+  as the default `\everypar` (#14).
+- A live-engine error is withdrawn once a pass compiles the fixed source, and a pass without
+  errors clears the previous pass's errors, so a host no longer shows an error after the text
+  is valid again. A paragraph that crashed the live engine (often a half-typed command) goes
+  live again when it is edited after a clean pass, instead of waiting for the preamble to
+  change; after three crashes in a row it still waits (#11).
 
 ## 0.0.5 (2026-10-19)
 

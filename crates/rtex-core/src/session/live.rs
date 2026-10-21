@@ -148,8 +148,9 @@ impl LiveUnits {
     /// Lift the quarantine of `id` when its text (`hash`) is no longer the one that hung or
     /// crashed the engine (e.g. a half-typed command that the user finished) and a pass has
     /// compiled cleanly since, unless the unit has crashed `MAX_CRASH_RETRIES` times in a row.
-    /// The crash count stays until the live engine typesets the unit (`forget_crashes`). Without the clean pass, the live engine would start the unit from state
-    /// the broken text left behind and could crash again.
+    /// The crash count stays until the live engine typesets the unit (`forget_crashes`). Without
+    /// the clean pass, the live engine would start the unit from state the broken text left
+    /// behind and could crash again.
     pub fn lift_quarantine_if_edited(&mut self, id: ParaId, hash: u64) {
         if let Some(u) = self.0.get_mut(&id) {
             let quarantined = u.over_budget.is_some_and(|(v, _)| v == QUARANTINED);
