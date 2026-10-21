@@ -543,9 +543,12 @@ impl LayoutStore {
     }
 
     /// The rows of a unit placed with its first row at (`ax`, `ay`) of `page`, keeping the
-    /// box's own geometry: one approximate fragment.
+    /// box's own geometry: one approximate fragment (none for a unit without rows, such as a
+    /// paragraph holding only a `\label`).
     pub fn fragments_at(page: i64, ax: Sp, ay: Sp, rows: &[(Sp, Sp)]) -> Vec<Fragment> {
-        let (fx, fy) = rows[0];
+        let Some(&(fx, fy)) = rows.first() else {
+            return Vec::new();
+        };
         let xs: Vec<Sp> = rows.iter().map(|(rx, _)| ax + (rx - fx)).collect();
         let baselines: Vec<Sp> = rows.iter().map(|(_, ry)| ay + (ry - fy)).collect();
         vec![Fragment {
