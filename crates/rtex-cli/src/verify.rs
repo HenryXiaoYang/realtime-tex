@@ -223,7 +223,9 @@ pub fn run(opts: VerifyOpts) -> Result<Report> {
             has_ctx,
             eu.rows(),
             &eu.flags,
-            c.name.as_deref().filter(|_| c.runin),
+            c.name
+                .as_deref()
+                .filter(|_| c.runin && !rtex_core::eligibility::runs_into_title(&src)),
         ));
         let shape_ok = match (&shape, c.kind.as_str()) {
             (UnitShape::Par, "par") => true,

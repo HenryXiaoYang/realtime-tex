@@ -3,7 +3,7 @@
 //! or IEEEtran.cls.
 
 use rtex_core::capture::run_capture;
-use rtex_core::eligibility::{check_engine_unit, classify_source, Policy, Reason};
+use rtex_core::eligibility::{check_engine_unit, classify_source, runs_into_title, Policy, Reason};
 use rtex_core::engine::FastServer;
 use rtex_core::layout::LayoutStore;
 use rtex_core::texlive::TexLive;
@@ -65,7 +65,9 @@ fn units(name: &str, body: &str) -> Option<Vec<Unit>> {
             eu.has_context(),
             eu.rows(),
             &eu.flags,
-            c.name.as_deref().filter(|_| c.runin),
+            c.name
+                .as_deref()
+                .filter(|_| c.runin && !runs_into_title(&src)),
         ));
         let verdict = reasons.is_empty().then(|| {
             srv.set_context(eu.uid, &eu.context_json()).unwrap();
@@ -135,32 +137,43 @@ fn floats_get_the_class_float_box() {
 }
 
 /// IEEEtran's `\subsubsection` is a run-in heading, like `\paragraph`: its title is set at the
-/// start of the following paragraph, whose lines the heading's unit then has. The capture sees
-/// it run in, so the heading waits for the full compile and says why, once.
+/// start of the following paragraph (or list), whose lines the heading's unit then has. The
+/// heading's span runs on through that paragraph or list, with or without a label and a blank
+/// line between, so it goes live like any heading.
 #[test]
-fn run_in_headings_wait_for_the_full_compile() {
+fn run_in_headings_go_live_with_the_paragraph_that_sets_their_title() {
+    let list = "\\begin{IEEEdescription}[\\IEEEusemathlabelsep\\IEEEsetlabelwidth{$V_1$}]\n\
+                \\item[$A$] The first symbol, with a description over a line or two of the column.\n\
+                \\item[$B$] The second symbol.\n\\end{IEEEdescription}\n";
     let body = format!(
         "\\section{{Method}}\n{PAR}\n\n\\subsubsection{{Device paths}}\n{PAR}\n\n{PAR}\n\n\
-         \\subsubsection*{{Unnumbered paths}}\n{PAR}\n"
+         \\subsubsection{{Labelled paths}}\n\\label{{sec:lp}}\n\n{PAR}\n\n\
+         \\subsubsection*{{Unnumbered paths}} {PAR}\n\n\
+         \\subsubsection*{{Nomenclature}}\n{list}\n{PAR}\n"
     );
     let Some(units) = units("runin", &body) else {
         return;
     };
-    let section = units.iter().find(|u| u.name == "heading:section");
-    assert!(section.is_some_and(|u| u.reasons.is_empty()), "{units:?}");
-    let run_in: Vec<&Vec<Reason>> = units
+    let headings: Vec<(&str, &[Reason])> = units
         .iter()
-        .filter(|u| u.name == "heading:subsubsection")
-        .map(|u| &u.reasons)
+        .filter(|u| u.name.starts_with("heading:"))
+        .map(|u| (u.name.as_str(), u.reasons.as_slice()))
         .collect();
-    assert_eq!(run_in.len(), 2, "{units:?}");
-    for reasons in run_in {
-        let n = reasons
-            .iter()
-            .filter(|r| **r == Reason::RunInHeading("subsubsection".into()))
-            .count();
-        assert_eq!(n, 1, "{units:?}");
-    }
+    assert_eq!(
+        headings,
+        [
+            ("heading:section", &[][..]),
+            ("heading:subsubsection", &[]),
+            ("heading:subsubsection", &[]),
+            ("heading:subsubsection", &[]),
+            ("heading:subsubsection", &[]),
+        ],
+        "{units:?}"
+    );
+    assert!(
+        units.iter().all(|u| u.verdict.is_some()),
+        "all live: {units:?}"
+    );
     let differing = differing(&units);
     assert!(
         differing.is_empty(),
@@ -187,7 +200,14 @@ fn the_paragraph_after_a_run_in_heading_goes_live() {
         .collect();
     assert_eq!(
         live,
-        ["par:", "par:", "heading:section", "par:"],
+        [
+            "heading:subsubsection",
+            "par:",
+            "par:",
+            "heading:subsubsection",
+            "heading:section",
+            "par:"
+        ],
         "{units:?}"
     );
     let differing = differing(&units);

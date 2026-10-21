@@ -1371,6 +1371,20 @@ impl Policy {
         policy
     }
 
+    /// The segmentation rules from the preamble: theorem-like environments end a span like a
+    /// list, and a heading the class sets run-in keeps the paragraph or list that sets its
+    /// title in its span (other classes' run-in headings are only known from the capture).
+    pub fn segment_rules(&self) -> crate::document::SegmentRules {
+        let mut run_in: Vec<String> = RUN_IN_HEADINGS.iter().map(|h| h.to_string()).collect();
+        if self.has_package("IEEEtran") {
+            run_in.push("subsubsection".into());
+        }
+        crate::document::SegmentRules {
+            block_envs: self.theorem_envs.iter().cloned().collect(),
+            run_in,
+        }
+    }
+
     pub fn has_package(&self, name: &str) -> bool {
         self.packages.contains(name)
     }
@@ -1746,6 +1760,86 @@ pub fn is_vocabulary_reason(r: &Reason) -> bool {
 /// (`check_engine_unit`).
 const RUN_IN_HEADINGS: &[&str] = &["paragraph", "subparagraph"];
 
+/// The source after a heading command and its arguments (`\subsubsection*[Short]{Title}`) that
+/// starts `text` (comments stripped; setup statements and vertical material before it skipped),
+/// or `None` when it does not start with a command or the title is not closed.
+fn after_heading(text: &str) -> Option<&str> {
+    let text = &text[content_start(text)..];
+    let b = text.as_bytes();
+    let skip_ws = |mut i: usize| {
+        while i < b.len() && b[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        i
+    };
+    let mut i = skip_ws(0);
+    if b.get(i) != Some(&b'\\') {
+        return None;
+    }
+    i += 1;
+    while i < b.len() && is_letter(b[i]) {
+        i += 1;
+    }
+    i = skip_ws(i);
+    if b.get(i) == Some(&b'*') {
+        i = skip_ws(i + 1);
+    }
+    if b.get(i) == Some(&b'[') {
+        i = skip_ws(group_end(b, i)?);
+    }
+    if b.get(i) != Some(&b'{') {
+        return None;
+    }
+    Some(&text[group_end(b, i)?..])
+}
+
+/// The index after the `{…}` or `[…]` group that opens at `b[i]` (`\` escapes a character).
+fn group_end(b: &[u8], i: usize) -> Option<usize> {
+    let bracket = b[i] == b'[';
+    let mut depth = i32::from(!bracket);
+    let mut j = i + 1;
+    while j < b.len() {
+        match b[j] {
+            b'\\' => j += 1,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if !bracket && depth == 0 {
+                    return Some(j + 1);
+                }
+            }
+            b']' if bracket && depth == 0 => return Some(j + 1),
+            _ => {}
+        }
+        j += 1;
+    }
+    None
+}
+
+/// Is `src` (comments allowed) nothing but `\label{…}`s and material `has_content` skips?
+pub fn labels_only(src: &str) -> bool {
+    let text = strip_comments(src);
+    let mut rest = text.as_str();
+    loop {
+        let t = rest.trim_start();
+        match t
+            .strip_prefix("\\label")
+            .map(str::trim_start)
+            .filter(|r| r.starts_with('{'))
+            .and_then(|r| Some(&r[group_end(r.as_bytes(), 0)?..]))
+        {
+            Some(r) => rest = r,
+            None => return !has_content(t),
+        }
+    }
+}
+
+/// Does the heading that starts `src` (comments allowed) have material after its title other
+/// than labels: for a run-in heading, the paragraph or list that sets the title?
+pub fn runs_into_title(src: &str) -> bool {
+    after_heading(&strip_comments(src)).is_some_and(|rest| !labels_only(rest))
+}
+
 pub fn classify_source(src: &str, policy: &Policy) -> (UnitShape, Vec<Reason>) {
     classify_source_with(src, policy, policy.permissive)
 }
@@ -1765,8 +1859,14 @@ pub fn classify_source_with(
         return (UnitShape::Par, vec![Reason::SetupStatement]);
     }
     let (shape, heading_base) = unit_shape(&text, policy);
+    // a run-in heading whose span holds the paragraph or list that sets its title is typeset
+    // like any heading; alone, it would typeset nothing
     let run_in = match &shape {
-        UnitShape::Heading(h) if RUN_IN_HEADINGS.contains(&h.as_str()) => Some(h.clone()),
+        UnitShape::Heading(h)
+            if RUN_IN_HEADINGS.contains(&h.as_str()) && !runs_into_title(&text) =>
+        {
+            Some(h.clone())
+        }
         _ => None,
     };
     let mut scan = Scan {
@@ -1972,7 +2072,9 @@ impl<'a> Scan<'a> {
         }
     }
 
-    /// Paragraph breaks (blank lines) are only fine inside block environments.
+    /// Paragraph breaks (blank lines) are only fine inside block environments, and between a
+    /// heading (with its labels) and what follows: TeX is still in vertical mode there (a
+    /// run-in heading's span goes on to the paragraph that sets its title).
     fn line_break(&mut self) {
         let (text, b) = (self.text, self.b);
         let line = &text[self.line_start..self.i];
@@ -1982,6 +2084,8 @@ impl<'a> Scan<'a> {
             && self.i + 1 < b.len()
             && !text[self.i + 1..].trim().is_empty()
             && self.line_start > 0
+            && !(matches!(self.shape, UnitShape::Heading(_))
+                && after_heading(&text[..self.line_start]).is_some_and(labels_only))
         {
             self.push(Reason::ParagraphBreak);
         }
@@ -3062,11 +3166,12 @@ mod tests {
             "{r:?}"
         );
         assert_eq!(optional_arg(" [a={[x]}, b] tail"), Some("a={[x]}, b"));
-        // run-in headings share the following paragraph's lines
+        // run-in headings share the following paragraph's lines: alone they wait, with it
+        // they go live
         let (shape, r) = classify_source("\\paragraph{Run-in.} With text.", &p);
         assert_eq!(shape, UnitShape::Heading("paragraph".into()));
-        assert_eq!(r, vec![Reason::RunInHeading("paragraph".into())]);
-        let (_, r) = classify_source_with("\\subparagraph{Deeper.} Text.", &p, true);
+        assert!(r.is_empty(), "{r:?}");
+        let (_, r) = classify_source_with("\\subparagraph{Deeper.}\n", &p, true);
         assert_eq!(r, vec![Reason::RunInHeading("subparagraph".into())]);
         let r = check_source(
             "Text {\\rm roman} and $\\rm x \\uparrow \\iint$ and \\scalebox{2}{big}",
@@ -3187,6 +3292,7 @@ mod tests {
             ),
             ("\\paragraph{Paths.}", Some("paragraph"), "paragraph"),
             ("\\paragraph{Paths.}", None, "paragraph"),
+            ("\\paragraph{Paths.}\n\\label{p}\n", None, "paragraph"),
         ] {
             let mut r = classify_source(src, &p).1;
             r.extend(check_engine_unit("heading", "", true, 2, &flags, run_in));
@@ -3195,6 +3301,29 @@ mod tests {
                 vec![Reason::RunInHeading(name.into())],
                 "{src} {run_in:?}"
             );
+        } // with the paragraph or list that sets its title, it goes live like any heading, a blank
+          // line after the heading and its labels included
+        for src in [
+            "\\paragraph{Paths.} Text.",
+            "\\paragraph*[P]{Paths \\{x\\}.}\n\\label{p} % c\n\nText.",
+            "\\paragraph{Paths.}\n\\begin{itemize}\n\\item a\n\\end{itemize}",
+        ] {
+            assert!(runs_into_title(src), "{src}");
+            let r = classify_source(src, &p).1;
+            assert!(r.is_empty(), "{src} {r:?}");
         }
+        assert!(!runs_into_title("\\paragraph{Paths. % }\n}\n\\label{x}"));
+        assert!(!runs_into_title("\\paragraph{Unclosed"));
+        assert_eq!(
+            classify_source("\\paragraph{A}\nText.\n\nMore.", &p).1,
+            vec![Reason::ParagraphBreak]
+        );
+        // the segmentation rules: the standard run-in headings, and IEEEtran's \subsubsection
+        let ieee = Policy::from_preamble("\\documentclass[journal]{IEEEtran}\n", &[], &[]);
+        assert_eq!(
+            ieee.segment_rules().run_in,
+            ["paragraph", "subparagraph", "subsubsection"]
+        );
+        assert_eq!(p.segment_rules().run_in, ["paragraph", "subparagraph"]);
     }
 }

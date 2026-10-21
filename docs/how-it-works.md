@@ -109,8 +109,9 @@ rtex checks this in layers.
 
 **Structure.** The span must map to exactly one unit of the last layout (or be new text next to
 one), its braces must balance, and it must not be something whose output is decided by the
-page builder. Footnote *text*, marginal notes and floats being moved are such things, and so
-are run-in headings like `\paragraph`.
+page builder. Footnote *text*, marginal notes and floats being moved are such things. A run-in
+heading like `\paragraph` sets its title in the paragraph (or list) after it, so its span runs
+on through that paragraph and the two are one unit.
 
 **Vocabulary.** rtex keeps an allow-list of commands that are known to depend only on the state
 it restores: text formatting, math, references, citations, common packages (hyperref, siunitx,

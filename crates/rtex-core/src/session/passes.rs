@@ -642,6 +642,7 @@ pub(super) fn deliver_layout(
                 });
             }
             let has_ctx = eu.has_context();
+            let span_text = files.values().find_map(|fb| fb.span_text(*id));
             // eligible = capture facts clean AND the span's source passes the allow-list with the
             // shape the capture saw (what apply_edit will decide for a one-character edit)
             let source_ok = layout
@@ -650,9 +651,7 @@ pub(super) fn deliver_layout(
                 .find(|sp| sp.id == *id)
                 .map(|sp| !sp.background_only)
                 .unwrap_or(false)
-                && files
-                    .values()
-                    .find_map(|fb| fb.span_text(*id))
+                && span_text
                     .map(|text| {
                         let (shape, _) = classify_source(text, &policy);
                         match (&shape, c.kind.as_str()) {
@@ -672,14 +671,14 @@ pub(super) fn deliver_layout(
                     has_ctx,
                     eu.rows(),
                     &eu.flags,
-                    c.name.as_deref().filter(|_| c.runin),
+                    c.name
+                        .as_deref()
+                        .filter(|_| c.runin && !span_text.is_some_and(runs_into_title)),
                 )
                 .is_empty()
             {
                 eligible.push(*id);
-                let strict_ok = files
-                    .values()
-                    .find_map(|fb| fb.span_text(*id))
+                let strict_ok = span_text
                     .map(|text| classify_source_with(text, &policy, false).1.is_empty())
                     .unwrap_or(false);
                 if strict_ok {

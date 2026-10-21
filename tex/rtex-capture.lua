@@ -325,7 +325,15 @@ function C.envbegin(name)
   local cur = C.cur
   if DEBUG_ENV then texio.write_nl("RTEXENV begin " .. name .. " line " .. tex.inputlineno .. " depth " .. C.env_depth .. " nest " .. tex.nest.ptr .. " cur " .. tostring(cur and cur.uid)) end
   note_runin(cur)
-  if cur and cur.kind == "heading" and tex.nest.ptr == 0 then unit_close(); cur = nil end
+  if cur and cur.kind == "heading" and tex.nest.ptr == 0 then
+    if iftrue("if@noskipsec") then
+      -- a run-in title still pending: the environment sets it (\@trivlist's \leavevmode), so
+      -- the heading's unit holds the environment, and ends with it
+      cur.env_depth = C.env_depth
+    else
+      unit_close(); cur = nil
+    end
+  end
   if not cur and tex.nest.ptr == 0 then
     unit_open("env", name, true)
   end
@@ -346,7 +354,7 @@ function C.envafter(name)
   C.env_depth = C.env_depth - 1
   if C.env_depth < 0 then C.env_depth = 0 end
   local cur = C.cur
-  if C.env_depth == 0 and cur and (cur.kind == "env" or cur.kind == "par") and tex.nest.ptr == 0 then unit_close() end
+  if C.env_depth == 0 and cur and (cur.kind == "env" or cur.kind == "par" or cur.env_depth == 0) and tex.nest.ptr == 0 then unit_close() end
 end
 
 -- The output routine (wrapped at \begin{document}) and \@outputpage (for output routines set

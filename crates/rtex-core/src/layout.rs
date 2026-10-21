@@ -482,12 +482,8 @@ impl LayoutStore {
                 .filter(|(n, _)| n.as_str() != main)
                 .map(|(n, t)| (n.as_str(), t.as_str())),
         ) {
-            let fb = crate::document::FileBuf::with_block_envs(
-                text,
-                &mut ids,
-                1,
-                policy.theorem_envs.iter().cloned().collect(),
-            );
+            let fb =
+                crate::document::FileBuf::with_rules(text, &mut ids, 1, policy.segment_rules());
             spans.extend(snapshot_spans_of(
                 &fb,
                 name,

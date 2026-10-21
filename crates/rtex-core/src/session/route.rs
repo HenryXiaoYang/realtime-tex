@@ -109,7 +109,9 @@ impl Session {
                     eu.has_context(),
                     eu.rows(),
                     &eu.flags,
-                    c.name.as_deref().filter(|_| c.runin),
+                    c.name
+                        .as_deref()
+                        .filter(|_| c.runin && !runs_into_title(text)),
                 ) {
                     reasons.push(reason_str(&r));
                 }
@@ -378,7 +380,10 @@ impl Session {
             None => (parent, true),
         };
         let mut json = eu.context_json();
-        let after_heading = idx > 0 && fb.spans[idx - 1].kind == SpanKind::Heading;
+        // not after a run-in heading's span, which holds the paragraph that set its title
+        let after_heading = idx > 0
+            && fb.spans[idx - 1].kind == SpanKind::Heading
+            && !runs_into_title(&fb.text[fb.spans[idx - 1].range.clone()]);
         json["everypar"] = serde_json::Value::String(if after_heading {
             AFTER_HEADING_EVERYPAR.to_string()
         } else {

@@ -19,6 +19,13 @@
   is valid again. A paragraph that crashed the live engine (often a half-typed command) goes
   live again when it is edited after a clean pass, instead of waiting for the preamble to
   change; after three crashes in a row it still waits (#11).
+- Run-in headings (`\paragraph`, `\subparagraph`, IEEEtran's `\subsubsection`) are live. The
+  source cut such a heading off from the paragraph or list that sets its title, so the heading
+  alone typeset nothing, and an edit in that paragraph was drawn without the title in the wrong
+  place until the pass. The heading's span now runs on through that paragraph or list, a label
+  and a blank line between them included, and the capture keeps a list that takes the title in
+  the heading's unit. The IEEEtran corpus paper goes from 20 to 27 of 27 units live, all exact
+  (#15).
 
 ## 0.0.5 (2026-10-19)
 
