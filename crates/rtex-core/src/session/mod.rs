@@ -372,6 +372,9 @@ struct Shared {
     /// The source scan for pictures at a revision (the whole project; one scan per edit, not
     /// one per routed span).
     pic_scan: Mutex<Option<(Revision, Arc<Vec<crate::piccache::PictureRef>>)>>,
+    /// Live-engine failures reported as `fast:<unit>` diagnostics, with the source revision
+    /// they were typeset at: the first layout of that revision or a later one withdraws them.
+    fast_failures: Mutex<BTreeMap<ParaId, Revision>>,
 }
 
 enum BgCmd {
@@ -467,6 +470,7 @@ impl Session {
             last_pass_dir: Mutex::new(None),
             pic_index: Mutex::new(None),
             pic_scan: Mutex::new(None),
+            fast_failures: Mutex::new(BTreeMap::new()),
         });
         let mut threads = Vec::new();
         {

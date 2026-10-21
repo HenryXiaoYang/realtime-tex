@@ -9,13 +9,34 @@
 //! - **for one layout version** (tagged; other versions are ignored and dropped at the next
 //!   layout): a probe verdict, an over-budget mark, an internal error;
 //! - **until the preamble changes** (`on_preamble_change`): a leaked definition, a quarantine
-//!   after the unit hung or crashed the engine, over-budget strikes.
+//!   after the unit hung or crashed the engine (lifted earlier once it is edited after a clean
+//!   pass, see `lift_quarantine_if_edited`), over-budget strikes.
 
 use super::*;
 
 /// An over-budget mark that is not tied to a layout version: the unit hung or crashed the
-/// engine and stays on the full compile until the preamble changes.
+/// engine and stays on the full compile until it is edited after a clean pass (or, after
+/// `MAX_CRASH_RETRIES` crashes in a row, until the preamble changes).
 pub(super) const QUARANTINED: u64 = u64::MAX;
+
+/// Crashes in a row (with no live compile of the unit in between) after which a unit stays on
+/// the full compile until the preamble changes, even when its text changes: a unit that keeps
+/// killing the engine would restart it on every keystroke.
+pub(super) const MAX_CRASH_RETRIES: u32 = 3;
+
+/// The unit hung or crashed the engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Crash {
+    /// Hash of the text that did it.
+    pub hash: u64,
+    /// Crashes in a row: since the live engine last typeset the unit (or the preamble changed).
+    pub count: u32,
+    /// Source revision of the text that did it.
+    pub revision: Revision,
+    /// A pass of that revision or a later one compiled without errors: the state the live
+    /// engine gets from the layout no longer comes from the broken text.
+    pub clean_pass: bool,
+}
 
 #[derive(Debug, Default)]
 pub(super) struct LiveUnit {
@@ -43,6 +64,8 @@ pub(super) struct LiveUnit {
     pub leak: Option<String>,
     /// Consecutive over-budget compiles (the first ones may be loading fonts).
     pub slow_strikes: u32,
+    /// The unit hung or crashed the engine.
+    pub crash: Option<Crash>,
 }
 
 impl LiveUnit {
@@ -56,6 +79,7 @@ impl LiveUnit {
             && self.internal_error.is_none()
             && self.leak.is_none()
             && self.slow_strikes == 0
+            && self.crash.is_none()
     }
 }
 
@@ -89,6 +113,53 @@ impl LiveUnits {
             .as_ref()
             .filter(|(v, _)| *v == lv)
             .map(|(_, m)| m.clone())
+    }
+
+    /// The unit hung or crashed the engine on text `hash` of source revision `revision`:
+    /// quarantine it.
+    pub fn quarantine(&mut self, id: ParaId, hash: u64, revision: Revision) {
+        let u = self.unit(id);
+        u.over_budget = Some((QUARANTINED, 0));
+        u.crash = Some(Crash {
+            hash,
+            count: u.crash.map_or(1, |c| c.count + 1),
+            revision,
+            clean_pass: false,
+        });
+    }
+
+    /// A pass of source revision `revision` compiled without errors: crashes at that revision
+    /// or before no longer taint the state the live engine starts from.
+    pub fn on_clean_pass(&mut self, revision: Revision) {
+        for u in self.0.values_mut() {
+            if let Some(c) = u.crash.as_mut().filter(|c| c.revision <= revision) {
+                c.clean_pass = true;
+            }
+        }
+    }
+
+    /// The live engine typeset `id`: its earlier crashes no longer count as crashes in a row.
+    pub fn forget_crashes(&mut self, id: ParaId) {
+        if let Some(u) = self.0.get_mut(&id) {
+            u.crash = None;
+        }
+    }
+
+    /// Lift the quarantine of `id` when its text (`hash`) is no longer the one that hung or
+    /// crashed the engine (e.g. a half-typed command that the user finished) and a pass has
+    /// compiled cleanly since, unless the unit has crashed `MAX_CRASH_RETRIES` times in a row.
+    /// The crash count stays until the live engine typesets the unit (`forget_crashes`). Without the clean pass, the live engine would start the unit from state
+    /// the broken text left behind and could crash again.
+    pub fn lift_quarantine_if_edited(&mut self, id: ParaId, hash: u64) {
+        if let Some(u) = self.0.get_mut(&id) {
+            let quarantined = u.over_budget.is_some_and(|(v, _)| v == QUARANTINED);
+            if quarantined
+                && u.crash
+                    .is_some_and(|c| c.clean_pass && c.hash != hash && c.count < MAX_CRASH_RETRIES)
+            {
+                u.over_budget = None;
+            }
+        }
     }
 
     /// Is `id` compiled on a borrowed context (since the last layout)?
@@ -134,6 +205,7 @@ impl LiveUnits {
             u.probe = None;
             u.over_budget = None;
             u.leak = None;
+            u.crash = None;
         }
         self.prune();
     }
@@ -182,5 +254,52 @@ mod tests {
         l.on_preamble_change();
         assert!(l.get(b).is_none(), "empty record pruned");
         assert!(l.get(a).unwrap().leak.is_none() && l.get(a).unwrap().slow_strikes == 2);
+    }
+
+    #[test]
+    fn quarantine_lifts_when_edited_after_a_clean_pass() {
+        let mut l = LiveUnits::default();
+        let a = ParaId(1);
+        let quarantined = |l: &LiveUnits| {
+            l.get(a)
+                .is_some_and(|u| u.over_budget == Some((QUARANTINED, 0)))
+        };
+        l.quarantine(a, 10, 5);
+        // the text that crashed the engine stays quarantined, also across layouts
+        l.lift_quarantine_if_edited(a, 10);
+        l.on_new_layout(7);
+        assert!(quarantined(&l));
+        // edited, but no clean pass since the crash: the layout still carries the broken text
+        l.lift_quarantine_if_edited(a, 11);
+        assert!(quarantined(&l));
+        // a clean pass of an older revision does not count
+        l.on_clean_pass(4);
+        l.lift_quarantine_if_edited(a, 11);
+        assert!(quarantined(&l));
+        // a clean pass of that revision or later, then an edit: back to the live engine
+        l.on_clean_pass(6);
+        l.lift_quarantine_if_edited(a, 10);
+        assert!(quarantined(&l), "still the text that crashed it");
+        l.lift_quarantine_if_edited(a, 11);
+        assert!(!quarantined(&l));
+        // a live compile in between resets the count: these crashes are not in a row
+        l.forget_crashes(a);
+        for n in 1..MAX_CRASH_RETRIES {
+            l.quarantine(a, 20 + u64::from(n), 10 + u64::from(n));
+        }
+        l.on_clean_pass(100);
+        l.lift_quarantine_if_edited(a, 99);
+        assert!(
+            !quarantined(&l),
+            "fewer than MAX_CRASH_RETRIES since the live compile"
+        );
+        // after MAX_CRASH_RETRIES crashes in a row, only a preamble change lifts it
+        l.quarantine(a, 30, 40);
+        assert_eq!(l.get(a).unwrap().crash.unwrap().count, MAX_CRASH_RETRIES);
+        l.on_clean_pass(100);
+        l.lift_quarantine_if_edited(a, 99);
+        assert!(quarantined(&l));
+        l.on_preamble_change();
+        assert!(l.get(a).is_none());
     }
 }

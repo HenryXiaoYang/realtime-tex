@@ -47,7 +47,7 @@ If not, the unit waits for the pass and you are told why.
 | Paragraphs inside `tcolorbox`, text printed from Lua (`\directlua`, `luacode`) | rtex cannot attribute those lines to a source span. |
 | Text whose output depends on state built up earlier in the document that rtex does not restore | The probe sees the difference, and the unit waits for the pass. |
 | A unit whose live compiles keep taking longer than the budget (50 ms by default) | Usually a large TikZ picture being edited. It goes back to live editing after the next layout. |
-| A unit that hung or crashed the live engine | Kept on the background path until the preamble changes, so it cannot crash the engine again. |
+| A unit that hung or crashed the live engine | Kept on the background path until it is edited after a full compile without errors, so the same text cannot crash the engine again. A half-typed command that crashed it, once finished, is live again from the next edit. After three crashes in a row the unit stays on the background path until the preamble changes. |
 
 **TikZ, pgfplots and other drawings** are typeset live when they fit in the budget, but the
 display list cannot describe vector paths. Pages that contain them are drawn from the PDF of the

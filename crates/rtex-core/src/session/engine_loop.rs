@@ -738,12 +738,20 @@ pub(super) fn engine_failed(
             }],
         })
         .ok();
+    // nothing on the live path reports this unit again (it stays on the background path): the
+    // next layout of this revision or a later one withdraws the diagnostic
+    s.fast_failures
+        .lock()
+        .insert(req.par_id, req.versions.source_revision);
     s.engine_generation.fetch_add(1, Ordering::SeqCst);
-    // the paragraph goes to the background path, and stays there until the preamble changes:
-    // retrying a unit that hung or crashed the engine would kill the server on every keystroke
+    // the paragraph goes to the background path, and stays there until it is edited after a
+    // clean pass (or, after a few crashes, until the preamble changes): retrying the text that
+    // hung or crashed the engine would kill the server on every keystroke
     s.bg_signal.0.send(BgCmd::Pass).ok();
     if !req.warmup {
-        s.live.lock().unit(req.par_id).over_budget = Some((QUARANTINED, 0));
+        s.live
+            .lock()
+            .quarantine(req.par_id, req.span_hash, req.versions.source_revision);
         s.events
             .send(Event::BackgroundScheduled {
                 par_id: Some(req.par_id),
@@ -1021,6 +1029,8 @@ pub(super) fn handle_result(
     if stale || counters_changed || !reasons.is_empty() {
         s.bg_signal.0.send(BgCmd::Pass).ok();
     }
+    // the engine typeset the unit: its earlier crashes no longer count as crashes in a row
+    s.live.lock().forget_crashes(req.par_id);
     let total_us = timing.total_us;
     s.events
         .send(Event::ParagraphUpdate {
