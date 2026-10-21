@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- A main file in a subfolder (`cv/sop/sop.tex`) reads document-relative paths from its own
+  folder, as `latexmk -cd` compiles it. `\input{body}`, a figure next to the main file and
+  `\graphicspath` entries are found in that folder, and bibtex and biber run there, so
+  `\bibliography{../../references}` is found and citations resolve. A `.bst` file at the top
+  of the project is found too (`BSTINPUTS`, like `BIBINPUTS`).
 - Live edits no longer stop for good after a paragraph that typesets no rows (only a `\label`,
   `\vspace` or `\noindent`) is typed next to another paragraph typed fresh, before the
   background pass. Its placement read the first of no rows and the engine thread panicked

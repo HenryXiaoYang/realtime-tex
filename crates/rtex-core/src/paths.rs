@@ -49,6 +49,16 @@ pub fn key(rel: &str) -> String {
     }
 }
 
+/// The folder of the project-relative file `rel` (`cv/sop` for `cv/sop/sop.tex`), `None` at the
+/// top of the project.
+pub fn folder(rel: &str) -> Option<String> {
+    let rel = key(rel);
+    let rel = rel.trim_start_matches("./");
+    rel.rsplit_once('/')
+        .map(|(dir, _)| dir.to_string())
+        .filter(|d| !d.is_empty())
+}
+
 /// `first` prepended to the search-path variable `var` of this process. A trailing separator
 /// (empty variable) keeps kpathsea's default path.
 pub fn prepend_search(first: &str, var: &str) -> String {
@@ -77,6 +87,14 @@ pub fn exe(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_of_a_project_file() {
+        assert_eq!(folder("cv/sop/sop.tex").as_deref(), Some("cv/sop"));
+        assert_eq!(folder("./cv/sop.tex").as_deref(), Some("cv"));
+        assert_eq!(folder("main.tex"), None);
+        assert_eq!(folder("./main.tex"), None);
+    }
 
     #[test]
     fn verbatim_prefixes_are_stripped_on_windows() {
