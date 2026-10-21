@@ -408,6 +408,10 @@ pub fn run_pass_with_runner(
         bib,
     } = plan;
     std::fs::create_dir_all(aux_dir)?;
+    let main_dir = match crate::paths::folder(main) {
+        Some(m) => snapshot_dir.join(m),
+        None => snapshot_dir.to_path_buf(),
+    };
     let jobname = Path::new(main)
         .file_stem()
         .and_then(|s| s.to_str())
@@ -442,19 +446,29 @@ pub fn run_pass_with_runner(
         if wants_bib && !bib_ran {
             let tool = if bcf.exists() { "biber" } else { "bibtex" };
             let mut cmd = Command::new(tool);
-            cmd.current_dir(out_dir).arg(&jobname);
+            // in the main file's folder, as `latexmk -cd` runs it: a document-relative database
+            // (`\bibliography{../../refs}`) is found from there; the outputs go to the pass
+            // directory
+            cmd.current_dir(&main_dir);
+            if tool == "biber" {
+                cmd.arg(format!("--output-directory={}", crate::paths::tex(out_dir)))
+                    .arg(&jobname);
+            } else {
+                // writing the .bbl outside the working directory
+                cmd.arg(crate::paths::tex(&out_dir.join(&jobname)))
+                    .env("openout_any", "a")
+                    .env("MIKTEX_ALLOWUNSAFEOUTPUTFILES", "1");
+            }
             if let Some(d) = &tl.bin_dir {
                 crate::paths::prepend_bin_dir(&mut cmd, d);
             }
-            // bibtex needs BIBINPUTS to find .bib files in the snapshot
-            cmd.env(
-                "BIBINPUTS",
-                format!(
-                    "{}{}",
-                    crate::paths::tex(snapshot_dir),
-                    crate::paths::SEARCH_SEP
-                ),
+            // .bib and .bst files at the top of the snapshot
+            let search = format!(
+                "{}{}",
+                crate::paths::tex(snapshot_dir),
+                crate::paths::SEARCH_SEP
             );
+            cmd.env("BIBINPUTS", &search).env("BSTINPUTS", &search);
             let out = cmd.output().with_context(|| format!("running {tool}"))?;
             if !out.status.success() {
                 log::warn!("{tool} failed: {}", String::from_utf8_lossy(&out.stderr));

@@ -6,6 +6,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 fn session(name: &str, files: &[(&str, &str)]) -> Option<(Session, PathBuf, PathBuf)> {
+    session_with_main(name, "main.tex", files)
+}
+
+fn session_with_main(
+    name: &str,
+    main: &str,
+    files: &[(&str, &str)],
+) -> Option<(Session, PathBuf, PathBuf)> {
     if rtex_core::texlive::TexLive::discover().is_err() {
         eprintln!("SKIP: no lualatex");
         return None;
@@ -15,9 +23,11 @@ fn session(name: &str, files: &[(&str, &str)]) -> Option<(Session, PathBuf, Path
     let project = root.join("project");
     std::fs::create_dir_all(&project).unwrap();
     for (rel, text) in files {
-        std::fs::write(project.join(rel), text).unwrap();
+        let path = project.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
     }
-    let mut cfg = SessionConfig::new(&project, "main.tex");
+    let mut cfg = SessionConfig::new(&project, main);
     cfg.build_dir = root.join("build");
     cfg.debounce = Duration::from_millis(50);
     cfg.fast_budget = Duration::from_millis(5000); // timing is not what these tests measure
@@ -220,4 +230,69 @@ fn imakeidx_options_reach_the_index_program() {
         ind.iter().any(|t| t.contains("RTEXMARK")),
         "the document's index style was not used: {ind:?}"
     );
+}
+
+#[test]
+fn a_main_file_in_a_subfolder_reads_paths_relative_to_its_own_folder() {
+    // as `latexmk -cd` compiles it: `\input{body}` is cv/sop/body.tex, the bibliography is two
+    // folders up, and the bibliography style sits at the project root
+    let Ok(plain) = std::process::Command::new("kpsewhich")
+        .arg("plain.bst")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    else {
+        eprintln!("SKIP: no kpsewhich");
+        return;
+    };
+    let Ok(bst) = std::fs::read_to_string(&plain) else {
+        eprintln!("SKIP: no plain.bst");
+        return;
+    };
+    let main = "\\documentclass{article}\n\\begin{document}\n\\input{body}\n\n\
+                A paragraph that cites the book~\\cite{knuth1984}.\n\n\
+                \\bibliographystyle{projectplain}\n\\bibliography{../../references}\n\
+                \\end{document}\n";
+    let Some((s, _project, build)) = session_with_main(
+        "subfolder",
+        "cv/sop/sop.tex",
+        &[
+            ("cv/sop/sop.tex", main),
+            (
+                "cv/sop/body.tex",
+                "A paragraph from the folder of the main file.\n",
+            ),
+            ("references.bib", BIB),
+            ("projectplain.bst", &bst),
+        ],
+    ) else {
+        return;
+    };
+    match wait_converged(&s) {
+        Event::LayoutUpdate { convergence, .. } => {
+            assert!(
+                matches!(convergence, Convergence::Converged),
+                "{convergence:?}"
+            )
+        }
+        _ => unreachable!(),
+    }
+    let pass = ["pass-0", "pass-1"]
+        .iter()
+        .map(|d| build.join("bg").join(d))
+        .filter(|d| d.join("sop.log").exists())
+        .max_by_key(|d| {
+            std::fs::metadata(d.join("sop.log"))
+                .unwrap()
+                .modified()
+                .unwrap()
+        })
+        .expect("no pass log");
+    let log = std::fs::read_to_string(pass.join("sop.log")).unwrap();
+    assert!(
+        !log.contains("body.tex' not found"),
+        "\\input missed:\n{log}"
+    );
+    assert!(!log.contains("undefined"), "citation undefined:\n{log}");
+    let bbl = std::fs::read_to_string(pass.join("sop.bbl")).unwrap_or_default();
+    assert!(bbl.contains("Knuth"), "no bibliography: {bbl:?}");
 }

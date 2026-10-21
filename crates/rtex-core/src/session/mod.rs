@@ -396,6 +396,7 @@ impl Session {
         let mut tl = TexLive::discover()?;
         let project_root = crate::paths::canonical(&cfg.project_root).context("project root")?;
         tl.project_dir = Some(project_root.clone());
+        tl.main_dir = crate::paths::folder(&cfg.main_file);
         let cfg = SessionConfig {
             project_root,
             main_file: crate::paths::key(&cfg.main_file),
