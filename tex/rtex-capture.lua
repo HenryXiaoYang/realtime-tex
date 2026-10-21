@@ -221,12 +221,25 @@ function C.begin_document()
 end
 
 -- Units ------------------------------------------------------------------------------------------
+-- A run-in heading (\@xsect) leaves \everypar{\if@noskipsec <set the title>\else \clubpenalty
+-- \@clubpenalty \everypar{}\fi}; the paragraph after the title's own one still starts under it.
+-- With the title out (\if@noskipsec false) only the \else branch runs: \clubpenalty is the one
+-- the lines are built with and \everypar empties itself, which is the default.
+local RUNIN_ELSE = "\\else \\clubpenalty \\@clubpenalty \\everypar {}\\fi "
+local function unit_everypar()
+  local ep = tex.gettoks("everypar")
+  if ep:find("^\\if@noskipsec ") and ep:sub(-#RUNIN_ELSE) == RUNIN_ELSE and not iftrue("if@noskipsec") then
+    return ""
+  end
+  return ep
+end
+
 local function unit_open(kind, name, set_attr)
   C.uid = C.uid + 1
   local ints, dims, glues = params()
   local u = { uid = C.uid, kind = kind, name = name, file = status.filename, begin_line = tex.inputlineno,
               nest = tex.nest.ptr, seqs = {}, placements = {}, counters = counter_delta(), thefmt = thefmt_delta(), macros = macro_delta(),
-              everypar = tex.gettoks("everypar"), nobreak = iftrue("if@nobreak"),
+              everypar = unit_everypar(), nobreak = iftrue("if@nobreak"),
               afterindent = iftrue("if@afterindent"), noskipsec = iftrue("if@noskipsec"),
               nfss = nfss(), color = macro("current@color"),
               ints = ints, dims = dims, glues = glues, parshape = tex.parshape,

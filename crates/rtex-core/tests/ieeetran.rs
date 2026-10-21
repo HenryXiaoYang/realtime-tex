@@ -167,3 +167,32 @@ fn run_in_headings_wait_for_the_full_compile() {
         "differ from the full run: {differing:?}"
     );
 }
+
+/// The paragraph after a run-in heading's own paragraph starts under the heading's `\everypar`,
+/// which by then only restores `\clubpenalty` and empties itself: it goes live like any other,
+/// and so does a heading that follows it.
+#[test]
+fn the_paragraph_after_a_run_in_heading_goes_live() {
+    let body = format!(
+        "\\subsubsection{{Device paths}}\n{PAR}\n\n{PAR}\n\n{PAR}\n\n\
+         \\subsubsection{{Zones}}\n{PAR}\n\n\\section{{Assessment}}\n{PAR}\n"
+    );
+    let Some(units) = units("after-runin", &body) else {
+        return;
+    };
+    let live: Vec<&str> = units
+        .iter()
+        .filter(|u| matches!(u.verdict, Some(Ok(()))))
+        .map(|u| u.name.as_str())
+        .collect();
+    assert_eq!(
+        live,
+        ["par:", "par:", "heading:section", "par:"],
+        "{units:?}"
+    );
+    let differing = differing(&units);
+    assert!(
+        differing.is_empty(),
+        "differ from the full run: {differing:?}"
+    );
+}
