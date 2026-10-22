@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Documents that load the `float` package no longer report "Unknown float option `\'",
+  "`U'", "`s'" for every float. The capture hooked the end of `\@xfloat`, which `float`
+  redefines with a parameter text ending in `[`, so the hook was read as the float's placement.
+  The float box is now recorded at `\end{figure}` and `\end{table}` instead
+  (realtime-tex-vsc-plugin#8).
 - A main file in a subfolder (`cv/sop/sop.tex`) reads document-relative paths from its own
   folder, as `latexmk -cd` compiles it. `\input{body}`, a figure next to the main file and
   `\graphicspath` entries are found in that folder, and bibtex and biber run there, so
