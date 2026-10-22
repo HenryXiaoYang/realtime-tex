@@ -339,8 +339,8 @@ function C.envbegin(name)
   end
   C.env_depth = C.env_depth + 1
 end
--- cmd/@xfloat/after hook (inside the float box, \figure* and \table* included): the float
--- box reset as the float environment set it up, recorded in the float's unit
+-- env/<float>/end hook (still inside the float environment's group): the float box reset as
+-- the float environment set it up, recorded in the float's unit
 function C.floatbox()
   local cur = C.cur
   if not (cur and cur.kind == "env") then return end

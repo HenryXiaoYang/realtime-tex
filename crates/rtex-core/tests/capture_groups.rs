@@ -90,3 +90,26 @@ fn group_started_paragraphs_and_tabularx_have_rows_and_outer_fonts() {
     let pol2 = Policy::from_preamble("\\documentclass{article}\n", &[], &[]);
     assert!(!classify_source(src, &pol2).1.is_empty());
 }
+
+/// float.sty redefines `\@xfloat` as `#1[` (to look for its `[H]`); the capture's float hook
+/// must not break that, or every float of the document reports "Unknown float option".
+#[test]
+fn float_package_floats_capture_without_errors() {
+    let Ok(tl) = TexLive::discover() else {
+        eprintln!("SKIP: no lualatex");
+        return;
+    };
+    let root = std::env::temp_dir().join(format!("rtex-floatsty-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let doc = "\\documentclass{article}\n\\usepackage{float}\n\\begin{document}\nHello.\n\n\
+               \\begin{table}[htbp]\n\\centering\n\\begin{tabular}{cc}\nA & B\\\\\n1 & 2\n\
+               \\end{tabular}\n\\end{table}\n\n\\begin{figure}[H]\n\\rule{1cm}{1cm}\n\
+               \\end{figure}\n\\end{document}\n";
+    std::fs::write(project.join("main.tex"), doc).unwrap();
+    let cap = run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "").unwrap();
+    let log = std::fs::read_to_string(&cap.log).unwrap();
+    assert!(!log.contains("Unknown float option"), "{log}");
+    assert!(cap.exit_ok, "{log}");
+}
