@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
+    <img src="docs/images/logo.svg" alt="realtime-tex logo: a T. rex in sunglasses between curly braces, then -TeX" width="520">
+  </picture>
+</p>
+
 # realtime-tex (rtex)
 
 [English](README.md) | 简体中文
