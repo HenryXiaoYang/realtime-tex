@@ -1,0 +1,26 @@
+name: stale
+on:
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+permissions:
+  issues: write
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v10
+        with:
+          days-before-issue-stale: 7
+          days-before-issue-close: 7
+          # issues only, leave pull requests alone
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          stale-issue-label: stale
+          stale-issue-message: >-
+            This issue has had no activity for a week, so it is marked stale.
+            It will be closed in 7 days unless someone comments or updates it.
+          close-issue-message: >-
+            Closed after two weeks without activity. Comment if it still
+            matters and it can be reopened.
+          close-issue-reason: not_planned
