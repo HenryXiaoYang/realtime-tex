@@ -637,6 +637,10 @@ fn tex_log_excerpt(log: &Path) -> Option<String> {
         }
     };
     let mut out = picked.join(" / ");
+    if first.is_none() && text.to_ascii_lowercase().contains("no pages of output") {
+        // no error, yet the run ended: a \stop or \end{document} before \begin{document}
+        out = "the preamble ended the run before \\begin{document} (no page was written)".into();
+    }
     if out.chars().count() > 400 {
         out = out.chars().take(400).collect::<String>() + "…";
     }
@@ -678,5 +682,13 @@ mod tests {
         let x = tex_log_excerpt(&log).unwrap();
         let _ = std::fs::remove_file(&log);
         assert!(x.contains("cannot open response channel PIPE"), "{x}");
+        // \stop in the preamble: no error, no page
+        std::fs::write(&log, "(./rtex-preamble.tex)\n )\n\nwarning  (pdf backend): no pages of output.\n\nPDF statistics: 0 PDF objects out of 1000\n").unwrap();
+        let x = tex_log_excerpt(&log).unwrap();
+        let _ = std::fs::remove_file(&log);
+        assert!(
+            x.starts_with("the preamble ended the run before \\begin{document}"),
+            "{x}"
+        );
     }
 }
