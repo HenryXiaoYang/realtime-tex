@@ -16,6 +16,7 @@ pub(super) fn engine_thread(s: Arc<Shared>) {
         standby: None,
         bbl_checked: u64::MAX,
         swapped_from: None,
+        failed_start: None,
     }
     .run();
 }
@@ -37,6 +38,9 @@ struct EngineLoop {
     /// replaced server are still valid (same preamble) and are carried over, as long as the
     /// generation is still the one the swap installed.
     swapped_from: Option<(u64, u64)>,
+    /// (generation, layout version) of the last start that failed: the same preamble with the
+    /// same `.aux` fails the same way, so it is not started again until one of them changes.
+    failed_start: Option<(u64, u64)>,
 }
 
 /// A server for the latest bibliography (`refresh_bibliography`): starting on a helper thread,
@@ -363,6 +367,13 @@ impl EngineLoop {
         if let Some(mut old) = self.server.take() {
             old.kill();
         }
+        // the layout the server starts from: its .bbl is compared with later layouts'
+        let (aux, aux_layout) = layout_aux(&s);
+        if self.failed_start == Some((wanted_gen, aux_layout)) {
+            // wait for a preamble edit (a new generation) or a new pass instead of retrying
+            let _ = s.pending_signal.1.recv_timeout(Duration::from_millis(200));
+            return false;
+        }
         let preamble = effective_preamble(&texts_of(&s.files.lock()), &s.cfg.main_file);
         s.events
             .send(Event::EngineState {
@@ -371,8 +382,6 @@ impl EngineLoop {
                 reason: None,
             })
             .ok();
-        // the layout the server starts from: its .bbl is compared with later layouts'
-        let (aux, aux_layout) = layout_aux(&s);
         match FastServer::spawn_with(
             &s.tl,
             &s.cfg.project_root,
@@ -414,7 +423,7 @@ impl EngineLoop {
                         reason: Some(reason),
                     })
                     .ok();
-                std::thread::sleep(Duration::from_secs(1));
+                self.failed_start = Some((wanted_gen, aux_layout));
                 false
             }
         }

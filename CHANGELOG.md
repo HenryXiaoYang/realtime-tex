@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- A preamble that ends the run before `\begin{document}` (a `\stop`, a half-typed preamble)
+  no longer restarts the live engine every second until the preamble changes. A failed start
+  is retried only after a preamble edit or a new pass, the failure says "the preamble ended the
+  run before `\begin{document}`" instead of quoting PDF statistics, and the full compile of
+  that text reports `Failed`: it read the previous pass's capture file and reported `Ok` with
+  the old pages (realtime-tex-vsc-plugin#10).
 - Documents that load the `float` package no longer report "Unknown float option `\'",
   "`U'", "`s'" for every float. The capture hooked the end of `\@xfloat`, which `float`
   redefines with a parameter text ending in `[`, so the hook was read as the float's placement.

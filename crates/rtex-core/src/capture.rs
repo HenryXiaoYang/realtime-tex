@@ -329,6 +329,8 @@ pub fn capture_command(
         .and_then(|s| s.to_str())
         .unwrap_or("main")
         .to_string();
+    // a run that ends in the preamble (\stop) writes no capture: never collect the last one's
+    let _ = std::fs::remove_file(out_dir.join(format!("{jobname}.rtex.json")));
     let mut cmd = tl.lualatex_cmd(src_dir);
     cmd.arg("-interaction=nonstopmode")
         .arg("-file-line-error")
