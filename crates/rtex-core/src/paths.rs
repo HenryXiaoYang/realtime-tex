@@ -1,6 +1,6 @@
 //! Paths as the platform, TeX and kpathsea want them.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 /// Separator of search-path variables (`PATH`, `TEXINPUTS`, `BIBINPUTS`, ...).
@@ -49,6 +49,15 @@ pub fn key(rel: &str) -> String {
     }
 }
 
+/// Whether the file key `rel` names a file inside the project: relative, without `..`, a root
+/// or a drive.
+pub fn inside_project(rel: &str) -> bool {
+    !rel.is_empty()
+        && Path::new(rel)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+}
+
 /// The folder of the project-relative file `rel` (`cv/sop` for `cv/sop/sop.tex`), `None` at the
 /// top of the project.
 pub fn folder(rel: &str) -> Option<String> {
@@ -94,6 +103,20 @@ mod tests {
         assert_eq!(folder("./cv/sop.tex").as_deref(), Some("cv"));
         assert_eq!(folder("main.tex"), None);
         assert_eq!(folder("./main.tex"), None);
+    }
+
+    #[test]
+    fn keys_outside_the_project() {
+        assert!(inside_project("main.tex"));
+        assert!(inside_project("./cv/sop.tex"));
+        assert!(!inside_project(""));
+        assert!(!inside_project("../../escape.tex"));
+        assert!(!inside_project("cv/../../escape.tex"));
+        assert!(!inside_project(if cfg!(windows) {
+            "C:/x.tex"
+        } else {
+            "/tmp/x.tex"
+        }));
     }
 
     #[test]

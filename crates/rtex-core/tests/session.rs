@@ -1515,3 +1515,46 @@ fn an_edit_under_a_run_in_heading_goes_live_with_the_title() {
     s.close();
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Bad host input is an error, not a panic or a silent clamp: an edit range inside a UTF-8
+/// character, reversed or past the end, and a new file outside the project (#25, #26).
+#[test]
+fn bad_edit_ranges_and_outside_paths_are_errors() {
+    let Some((s, project)) = open("badinput") else {
+        return;
+    };
+    let text = s.document_text("main.tex").unwrap();
+    let at = text.find("\\end{document}").unwrap();
+    s.apply_edit(
+        "main.tex",
+        Edit {
+            start_byte: at,
+            end_byte: at,
+            text: "Café.\n\n".into(),
+        },
+    )
+    .unwrap();
+    let e = at + "Caf".len() + 1; // inside the two bytes of `é`
+    let len = text.len() + "Café.\n\n".len();
+    for (start, end) in [(e, e), (at, e), (at + 2, at), (len + 1, len + 1)] {
+        let r = s.apply_edit(
+            "main.tex",
+            Edit {
+                start_byte: start,
+                end_byte: end,
+                text: "x".into(),
+            },
+        );
+        assert!(r.is_err(), "{start}..{end} was accepted");
+    }
+    assert!(s.document_text("main.tex").unwrap().contains("Café.\n\n"));
+
+    let escape = project.parent().unwrap().join("escape.tex");
+    for p in ["../escape.tex", escape.to_str().unwrap()] {
+        assert!(s.set_document(p, "x").is_err(), "{p} was accepted");
+    }
+    s.request_layout();
+    wait_layout(&s);
+    assert!(!escape.exists());
+    assert!(s.set_document("chapters/new.tex", "x").is_ok());
+}
