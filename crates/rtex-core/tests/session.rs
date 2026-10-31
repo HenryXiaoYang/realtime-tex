@@ -1644,3 +1644,48 @@ fn a_pass_past_its_time_limit_fails_and_the_next_one_runs() {
         }
     }
 }
+
+/// A preamble that cannot load (a missing package) fails the live engine's start once; it is
+/// not restarted until the preamble changes (#27, realtime-tex-vsc-plugin#10).
+#[test]
+fn a_missing_package_does_not_restart_the_engine_in_a_loop() {
+    let Some((s, _project)) = open("missingpkg") else {
+        return;
+    };
+    wait_layout(&s);
+    let text = s.document_text("main.tex").unwrap();
+    let at = text.find("\\begin{document}").unwrap();
+    let pkg = "\\usepackage{rtexnosuchpackage}\n";
+    let edit = |start, end, text: &str| {
+        s.apply_edit(
+            "main.tex",
+            Edit {
+                start_byte: start,
+                end_byte: end,
+                text: text.into(),
+            },
+        )
+        .unwrap()
+    };
+    edit(at, at, pkg);
+    // the events before the failure are not requeued: only later starts are counted
+    let (failed, _) = s.wait_for(
+        Duration::from_secs(120),
+        |e| matches!(e, Event::EngineState { state, .. } if state == "Failed"),
+    );
+    assert!(failed.is_some(), "the start did not fail");
+    let (_, later) = s.wait_for(Duration::from_secs(6), |_| false);
+    let starts = later
+        .iter()
+        .filter(|e| matches!(e, Event::EngineState { state, .. } if state == "Starting"))
+        .count();
+    assert_eq!(starts, 0, "restarted the same preamble");
+
+    edit(at, at + pkg.len(), "");
+    let (ready, _) = wait(
+        &s,
+        120,
+        |e| matches!(e, Event::EngineState { state, .. } if state == "Ready"),
+    );
+    assert!(ready.is_some(), "no restart after the fix");
+}
