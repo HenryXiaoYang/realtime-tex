@@ -225,6 +225,18 @@ Replies have a `"reply"` key (`"edit"`, `"spans"`, …, or `"error"`). Events ha
 key (`"ParagraphUpdate"`, `"LayoutUpdate"`, …) with the fields above. Display lists are inline,
 in their JSON form.
 
+`start` and `end` are byte offsets into the file's UTF-8 text. A range that is reversed, runs
+past the end or splits a character gets `"reply": "error"`, as do an unknown file and a new
+`set_document` path outside the project (`..`, an absolute path elsewhere).
+
+## Untrusted documents
+
+rtex runs LuaLaTeX with the user's privileges, and a document can run Lua. LuaLaTeX may write
+anywhere the user can (`openout_any=a`): the live engine talks to rtex through a pipe outside
+the output directory, and Lua's file functions (`io.open`, `lfs`, `os.remove`) are not
+limited by `openout_any` anyway. rtex is not a sandbox: a host that opens projects it does not
+trust should run `rtex serve` in OS-level isolation (a container, bubblewrap, a separate user).
+
 ## Versioning
 
 rtex is at 0.0.x. The API, the C ABI, the display-list format and the engine protocol are
