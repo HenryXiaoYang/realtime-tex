@@ -24,7 +24,7 @@ hex = "0.4"
 tempfile = "3"
 nix = { version = "0.29", features = ["fs", "poll", "signal", "process"] }
 libc = "0.2"
-lopdf = "0.36"
+lopdf = "0.42"
 flate2 = "1"
 ttf-parser = "0.25"
 tiny-skia = "0.11"

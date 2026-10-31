@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- lopdf 0.42 (from 0.36): 0.36 overflows the stack on deeply nested PDF objects
+  (RUSTSEC-2026-0187), and rtex reads every pass's PDF with it (#24).
+
 ### Fixed
 
 - A background or export pass that never ends (`\directlua{while true do end}`) is killed
