@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- A background or export pass that never ends (`\directlua{while true do end}`) is killed
+  after `pass_timeout` (default 5 minutes, `pass_timeout_ms` in the C/JSON config) and the
+  layout reports `Failed` with "lualatex was stopped after … s". It kept one CPU busy forever,
+  and no layout or export finished after it, even once the source was fixed. A pass whose
+  lualatex was killed by a signal (a CPU limit, the OOM killer) reports `Failed` too; it
+  reported `Ok` with whatever pages it had written (#22).
 - `rtex serve` no longer exits (status 101, "start of range should be a character boundary")
   on an `edit` whose offset falls inside a multi-byte UTF-8 character. A range inside a
   character, a start after the end, an offset past the end of the file and a negative or

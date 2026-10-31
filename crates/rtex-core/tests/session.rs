@@ -1558,3 +1558,89 @@ fn bad_edit_ranges_and_outside_paths_are_errors() {
     assert!(!escape.exists());
     assert!(s.set_document("chapters/new.tex", "x").is_ok());
 }
+
+/// A pass that runs past `pass_timeout` is killed and reported as failed, and the next edit
+/// gets a fresh pass (#22).
+#[test]
+fn a_pass_past_its_time_limit_fails_and_the_next_one_runs() {
+    if rtex_core::texlive::TexLive::discover().is_err() {
+        eprintln!("SKIP: no lualatex");
+        return;
+    }
+    let root = std::env::temp_dir().join(format!("rtex-session-{}-timeout", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    generate(2, Variant::Pure, FontSet::Pagella, 11, &project).unwrap();
+    let mut cfg = SessionConfig::new(&project, "main.tex");
+    cfg.build_dir = root.join("build");
+    cfg.debounce = Duration::from_millis(50);
+    // longer than a cold first pass on a Windows runner (over 8 s)
+    cfg.pass_timeout = Duration::from_secs(30);
+    let s = Session::open(cfg).unwrap();
+    assert!(matches!(
+        wait_layout(&s),
+        Event::LayoutUpdate {
+            compile: rtex_core::session::CompileStatus::Ok,
+            ..
+        }
+    ));
+
+    let text = s.document_text("main.tex").unwrap();
+    let at = text.find("\\end{document}").unwrap();
+    let lp = "\\directlua{while true do end}\n\n";
+    s.apply_edit(
+        "main.tex",
+        Edit {
+            start_byte: at,
+            end_byte: at,
+            text: lp.into(),
+        },
+    )
+    .unwrap();
+    s.request_layout();
+    let t0 = std::time::Instant::now();
+    match wait_layout(&s) {
+        Event::LayoutUpdate {
+            compile,
+            convergence,
+            ..
+        } => {
+            assert_eq!(
+                compile,
+                rtex_core::session::CompileStatus::Failed,
+                "{convergence:?}"
+            );
+            assert!(
+                format!("{convergence:?}").contains("time limit"),
+                "{convergence:?}"
+            );
+        }
+        _ => unreachable!(),
+    }
+    assert!(t0.elapsed() < Duration::from_secs(90));
+
+    let fixed = s
+        .apply_edit(
+            "main.tex",
+            Edit {
+                start_byte: at,
+                end_byte: at + lp.len(),
+                text: String::new(),
+            },
+        )
+        .unwrap()
+        .source_revision;
+    s.request_layout();
+    // a second pass of the looping text may still be running: wait for the fixed text's
+    loop {
+        if let Event::LayoutUpdate {
+            versions, compile, ..
+        } = wait_layout(&s)
+        {
+            if versions.source_revision >= fixed {
+                assert_eq!(compile, rtex_core::session::CompileStatus::Ok);
+                break;
+            }
+        }
+    }
+}

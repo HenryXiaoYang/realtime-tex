@@ -289,6 +289,7 @@ pub fn run_pass(
         bib,
         instrumented,
         "",
+        None,
     )
 }
 
@@ -303,9 +304,18 @@ pub fn run_pass_with(
     bib: BibTool,
     instrumented: bool,
     unit_envs: &str,
+    limit: Option<std::time::Duration>,
 ) -> Result<PassOutcome> {
     let mut runner = |_pass: u32| {
-        crate::capture::run_capture_with(tl, snapshot_dir, main, out_dir, instrumented, unit_envs)
+        crate::capture::run_capture_with(
+            tl,
+            snapshot_dir,
+            main,
+            out_dir,
+            instrumented,
+            unit_envs,
+            limit,
+        )
     };
     run_pass_with_runner(
         PassPlan {
@@ -832,12 +842,13 @@ impl WarmEngine {
     }
 
     /// Typeset the body: refresh the snapshot texts (same preamble), release the engine and
-    /// collect the pass like a fresh run.
+    /// collect the pass like a fresh run (killed after `limit`).
     pub fn run(
         mut self,
         project: &Path,
         files: &BTreeMap<String, String>,
         main: &str,
+        limit: Option<std::time::Duration>,
     ) -> Result<CaptureResult> {
         let t0 = std::time::Instant::now();
         let h = write_body_snapshot(project, files, main, &self.src_dir)?;
@@ -854,19 +865,12 @@ impl WarmEngine {
             stdin.flush().ok();
             drop(stdin);
         }
-        // drain stdout before waiting (a full pipe would block the engine), then reap
-        let mut stdout = Vec::new();
-        if let Some(mut so) = self.child.stdout.take() {
-            use std::io::Read;
-            let _ = so.read_to_end(&mut stdout);
-        }
-        let status = self.child.wait().context("waiting for standby pass")?;
+        let (status, stdout) = crate::capture::wait_within(&mut self.child, limit)?;
         collect_capture(
             &self.out_dir,
             &self.jobname,
             self.instrumented,
-            status.success(),
-            status.code(),
+            status,
             &stdout,
             t0.elapsed(),
         )

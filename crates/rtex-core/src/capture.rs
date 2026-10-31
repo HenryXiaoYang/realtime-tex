@@ -6,8 +6,8 @@ use rtex_dl::{DisplayList, Sp};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Instant;
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Nfss {
@@ -277,11 +277,12 @@ pub fn run_capture(
     out_dir: &Path,
     instrumented: bool,
 ) -> Result<CaptureResult> {
-    run_capture_with(tl, src_dir, main, out_dir, instrumented, "")
+    run_capture_with(tl, src_dir, main, out_dir, instrumented, "", None)
 }
 
 /// `run_capture` with extra unit environments (comma separated, `$RTEX_UNIT_ENVS`): theorem-like
-/// environments the capture should treat as units.
+/// environments the capture should treat as units. A run that takes longer than `limit` is
+/// killed and fails.
 pub fn run_capture_with(
     tl: &TexLive,
     src_dir: &Path,
@@ -289,6 +290,7 @@ pub fn run_capture_with(
     out_dir: &Path,
     instrumented: bool,
     unit_envs: &str,
+    limit: Option<Duration>,
 ) -> Result<CaptureResult> {
     let (mut cmd, jobname, out_dir) =
         capture_command(tl, src_dir, main, out_dir, instrumented, unit_envs)?;
@@ -299,16 +301,55 @@ pub fn run_capture_with(
         format!("{hook}\\input{{{main}}}")
     });
     let t0 = Instant::now();
-    let out = cmd.output().context("spawning lualatex")?;
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("spawning lualatex")?;
+    let (status, stdout) = wait_within(&mut child, limit)?;
     collect_capture(
         &out_dir,
         &jobname,
         instrumented,
-        out.status.success(),
-        out.status.code(),
-        &out.stdout,
+        status,
+        &stdout,
         t0.elapsed(),
     )
+}
+
+/// Wait for a pass's lualatex, reading its stdout (a full pipe would block it). After `limit`
+/// it is killed and the pass fails: a document can loop forever (`\directlua{while true do
+/// end}`), and nothing else stops a pass.
+pub fn wait_within(child: &mut Child, limit: Option<Duration>) -> Result<(ExitStatus, Vec<u8>)> {
+    let mut so = child
+        .stdout
+        .take()
+        .context("lualatex without a stdout pipe")?;
+    let (tx, rx) = crossbeam_channel::bounded(1);
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut b = Vec::new();
+        let _ = so.read_to_end(&mut b);
+        tx.send(b).ok();
+    });
+    // stdout closes when lualatex exits
+    let stdout = match limit {
+        None => rx.recv().unwrap_or_default(),
+        Some(limit) => match rx.recv_timeout(limit) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                bail!(
+                    "lualatex was stopped after {} s, the time limit of a pass (does the document \
+                     loop forever?)",
+                    limit.as_secs_f64()
+                );
+            }
+        },
+    };
+    Ok((child.wait().context("waiting for lualatex")?, stdout))
 }
 
 /// The lualatex command for a pass over `src_dir`, without its final `\input` argument.
@@ -350,11 +391,16 @@ pub fn collect_capture(
     out_dir: &Path,
     jobname: &str,
     instrumented: bool,
-    exit_ok: bool,
-    exit_code: Option<i32>,
+    status: ExitStatus,
     stdout: &[u8],
     wall: std::time::Duration,
 ) -> Result<CaptureResult> {
+    let (exit_ok, exit_code) = (status.success(), status.code());
+    // killed by a signal (a CPU limit, the OOM killer): its outputs are partial, whatever
+    // pages it wrote
+    if exit_code.is_none() {
+        bail!("lualatex was killed ({status})");
+    }
     let log = out_dir.join(format!("{jobname}.log"));
     let pdf = out_dir.join(format!("{jobname}.pdf"));
     let json = if instrumented {
