@@ -590,6 +590,10 @@ impl Session {
             .map(|f| f.text.len())
             .unwrap_or(0);
         if len == 0 && !self.shared.files.lock().contains_key(rel_path) {
+            // the snapshot writes the file at this key
+            if !crate::paths::inside_project(rel_path) {
+                return Err(anyhow!("{rel_path} is outside the project"));
+            }
             let rev = self.shared.source_revision.fetch_add(1, Ordering::SeqCst) + 1;
             let fb = FileBuf::with_rules(
                 text,
@@ -634,6 +638,14 @@ impl Session {
             let fb = files
                 .get_mut(rel_path)
                 .ok_or_else(|| anyhow!("unknown file {rel_path}"))?;
+            let (start, end) = (edit.start_byte, edit.end_byte);
+            if start > end || !fb.text.is_char_boundary(start) || !fb.text.is_char_boundary(end) {
+                return Err(anyhow!(
+                    "bad edit range {start}..{end} in {rel_path}: the file has {} bytes and \
+                     offsets must fall on UTF-8 character boundaries",
+                    fb.text.len()
+                ));
+            }
             // a setup span (definitions, lengths after \begin{document}) before or after the
             // edit: the server's preamble changes
             let was_setup = fb.spans.iter().any(|sp| {

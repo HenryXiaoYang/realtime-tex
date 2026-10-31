@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- `rtex serve` no longer exits (status 101, "start of range should be a character boundary")
+  on an `edit` whose offset falls inside a multi-byte UTF-8 character. A range inside a
+  character, a start after the end, an offset past the end of the file and a negative or
+  non-integer offset now get `reply: error` and leave the session running; they were clamped
+  before, which could turn a body edit into a preamble edit (#25).
+- `set_document` refuses a new file outside the project (`../escape.tex`, an absolute path
+  elsewhere) with `reply: error`. The snapshot wrote such a file at that path (#26).
 - A preamble that ends the run before `\begin{document}` (a `\stop`, a half-typed preamble)
   no longer restarts the live engine every second until the preamble changes. A failed start
   is retried only after a preamble edit or a new pass, the failure says "the preamble ended the
