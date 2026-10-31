@@ -379,7 +379,12 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
             if let Ok(next) = spawn_standby(s, &texts, &unit_envs, other) {
                 *s.standby.lock() = Some(next);
             }
-            let cap = w.run(&s.cfg.project_root, &texts, &s.cfg.main_file)?;
+            let cap = w.run(
+                &s.cfg.project_root,
+                &texts,
+                &s.cfg.main_file,
+                Some(s.cfg.pass_timeout),
+            )?;
             finished(&cap);
             Ok(cap)
         };
@@ -407,6 +412,7 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
                 &dir,
                 true,
                 &unit_envs,
+                Some(s.cfg.pass_timeout),
             )?;
             finished(&cap);
             Ok(cap)
@@ -845,6 +851,7 @@ pub(super) fn run_export(s: &Shared, job: u64, out: PathBuf) {
         s.cfg.bib_tool,
         false,
         "",
+        Some(s.cfg.pass_timeout),
     ) {
         Ok(o) => {
             let diags = parse_log(&o.capture.log);

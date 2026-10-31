@@ -45,6 +45,9 @@ pub struct SessionConfig {
     pub fast_on_stale_context: bool,
     pub bib_tool: BibTool,
     pub compile_timeout: Duration,
+    /// A background or export lualatex run that takes longer than this is killed and the
+    /// layout fails (default 5 min; a document can loop forever).
+    pub pass_timeout: Duration,
     /// Units whose fast compiles take longer than this three times in a row are routed to the
     /// background path until the next layout (default 50 ms: a unit that slow, a large plot
     /// being drawn, would hold up the units typed after it; a quicker one, even an `align`
@@ -133,6 +136,7 @@ impl SessionConfig {
             fast_on_stale_context: true,
             bib_tool: BibTool::Auto,
             compile_timeout: Duration::from_secs(5),
+            pass_timeout: Duration::from_secs(300),
             fast_budget: Duration::from_millis(50),
             unit_envs: Vec::new(),
             warm_background: true,

@@ -161,6 +161,7 @@ pub fn run(opts: VerifyOpts) -> Result<Report> {
         BibTool::Auto,
         true,
         &unit_envs,
+        None,
     )?;
     let clean_pass = run_pass_with(
         &tl,
@@ -171,6 +172,7 @@ pub fn run(opts: VerifyOpts) -> Result<Report> {
         BibTool::Auto,
         false,
         "",
+        None,
     )?;
     if !cap_pass.aux_stable || !clean_pass.aux_stable {
         println!(
@@ -712,7 +714,7 @@ fn pic_cache_check(
     cache.absorb(&pics, &recorded, &[], &cap.pdf)?;
     rep.hits = cache.write_manifest(&pics, &out.join("pic-manifest.json"))?;
     let cached =
-        rtex_core::capture::run_capture_with(tl, project, &opts.main, &out, true, unit_envs)?;
+        rtex_core::capture::run_capture_with(tl, project, &opts.main, &out, true, unit_envs, None)?;
     rep.wall_cached_ms = cached.wall.as_millis() as u64;
     rep.mismatched = cached.json.pic_mismatch.len();
     // units and placements

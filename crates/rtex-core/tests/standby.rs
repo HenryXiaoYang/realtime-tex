@@ -22,8 +22,8 @@ fn standby_pass_matches_fresh_pass() {
     files.insert("main.tex".to_string(), main);
     // fresh run (two passes so labels exist on both sides)
     let fresh_out = root.join("fresh");
-    run_capture_with(&tl, &project, "main.tex", &fresh_out, true, "").unwrap();
-    let fresh = run_capture_with(&tl, &project, "main.tex", &fresh_out, true, "").unwrap();
+    run_capture_with(&tl, &project, "main.tex", &fresh_out, true, "", None).unwrap();
+    let fresh = run_capture_with(&tl, &project, "main.tex", &fresh_out, true, "", None).unwrap();
     // standby: spawn, wait a moment (preamble loading), release
     let warm_out = root.join("warm");
     let body_dir = root.join("src-body");
@@ -38,7 +38,7 @@ fn standby_pass_matches_fresh_pass() {
         unit_envs: "",
     })
     .unwrap();
-    let first = w.run(&project, &files, "main.tex").unwrap();
+    let first = w.run(&project, &files, "main.tex", None).unwrap();
     assert!(first.exit_ok, "standby pass failed");
     let w2 = WarmEngine::spawn(rtex_core::background::StandbySpec {
         tl: &tl,
@@ -53,7 +53,7 @@ fn standby_pass_matches_fresh_pass() {
     .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(1500));
     let t0 = std::time::Instant::now();
-    let warm = w2.run(&project, &files, "main.tex").unwrap();
+    let warm = w2.run(&project, &files, "main.tex", None).unwrap();
     let warm_wall = t0.elapsed();
     assert!(warm.exit_ok);
     eprintln!(

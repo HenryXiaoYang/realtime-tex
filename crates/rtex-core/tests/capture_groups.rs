@@ -43,7 +43,8 @@ fn group_started_paragraphs_and_tabularx_have_rows_and_outer_fonts() {
     let project = root.join("project");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("main.tex"), DOC).unwrap();
-    let cap = run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "").unwrap();
+    let cap =
+        run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "", None).unwrap();
     assert_eq!(
         cap.json.units.len(),
         6,
@@ -108,7 +109,8 @@ fn float_package_floats_capture_without_errors() {
                \\end{tabular}\n\\end{table}\n\n\\begin{figure}[H]\n\\rule{1cm}{1cm}\n\
                \\end{figure}\n\\end{document}\n";
     std::fs::write(project.join("main.tex"), doc).unwrap();
-    let cap = run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "").unwrap();
+    let cap =
+        run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "", None).unwrap();
     let log = std::fs::read_to_string(&cap.log).unwrap();
     assert!(!log.contains("Unknown float option"), "{log}");
     assert!(cap.exit_ok, "{log}");

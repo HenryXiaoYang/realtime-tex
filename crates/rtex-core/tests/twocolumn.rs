@@ -34,7 +34,8 @@ fn every_unit_of_a_two_column_document_has_its_lines_as_rows() {
     let project = root.join("project");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("main.tex"), document()).unwrap();
-    let cap = run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "").unwrap();
+    let cap =
+        run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "", None).unwrap();
     assert!(cap.json.pages >= 4, "{} pages", cap.json.pages);
     let lines: std::collections::HashMap<i64, i64> = cap
         .json
