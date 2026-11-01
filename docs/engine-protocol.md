@@ -36,6 +36,7 @@ with the project directory as the working directory and this environment:
 | `TEXINPUTS`, `LUAINPUTS` | prepend rtex's `tex/latex//` and `tex//` |
 | `openout_any=a` | allow writing to the response channel by absolute path |
 | `max_print_line=100000` | keep log lines unwrapped for the diagnostics parser |
+| `RTEX_MATH_OWNER_ATTRIBUTE` | optional configured attribute number; enables math ownership observation in live and capture processes |
 | `RTEX_TRACE` | optional: a file that gets one flushed line per request stage |
 
 Before `\begin{document}` the driver copies the latest layout's `.aux` and `.bbl` next to
