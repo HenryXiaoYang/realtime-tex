@@ -33,8 +33,13 @@ The approach follows Clemens Lode, [*Real-Time LuaTeX: Recompiling Large Documen
 
 ## Use it in VS Code
 
-The quickest way to use rtex is the **[Realtime TeX Live Preview](https://github.com/HenryXiaoYang/realtime-tex-vsc-plugin)**
-extension for VS Code. It shows a live preview next to your editor and installs rtex (and, if
+The quickest way to use rtex is the **[Realtime TeX](https://marketplace.visualstudio.com/items?itemName=henryxiaoyang.realtime-tex)**
+extension for VS Code ([source](https://github.com/HenryXiaoYang/realtime-tex-vsc-plugin)).
+Install it from the Marketplace, or search for "realtime tex" in the Extensions view:
+
+<img src="https://raw.githubusercontent.com/HenryXiaoYang/realtime-tex-vsc-plugin/main/docs/marketplace.png" alt="Realtime TeX in the Extensions view of VS Code, with its Install button" width="362">
+
+It shows a live preview next to your editor and installs rtex (and, if
 needed, a minimal TeX Live) for you on first use. Open a `.tex` file, click the preview icon in
 the editor title bar (or press Ctrl+Alt+V, Cmd+Alt+V on a Mac), and start typing. It runs rtex
 natively on Linux, macOS and Windows, and downloads the prebuilt engine for your platform.
