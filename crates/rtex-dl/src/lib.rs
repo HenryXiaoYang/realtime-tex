@@ -311,8 +311,87 @@ pub struct ImageInfo {
     pub pages: i64,
 }
 
+/// Host-supplied math ownership, observed before virtual-font expansion. Coordinates use
+/// the display list's origin, in sp; boxes are [left, top, right, bottom].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct MathOwners {
+    pub glyphs: Vec<OwnedGlyph>,
+    pub fields: Vec<MathField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OwnedGlyph {
+    pub owner: i64,
+    pub font: i64,
+    pub char: i64,
+    pub bbox: [Sp; 4],
+}
+
+/// Which part of a formula a [`MathField`] box covers. JSON uses the lowercase name; the
+/// binary record uses [`MathRole::code`].
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum MathRole {
+    Num = 1,
+    Den = 2,
+    Radicand = 3,
+    Sup = 4,
+    Sub = 5,
+    Degree = 6,
+    /// A matrix or alignment cell.
+    Cell = 7,
+    /// A whole inline or display formula.
+    Math = 8,
+}
+
+impl MathRole {
+    const ALL: [MathRole; 8] = [
+        MathRole::Num,
+        MathRole::Den,
+        MathRole::Radicand,
+        MathRole::Sup,
+        MathRole::Sub,
+        MathRole::Degree,
+        MathRole::Cell,
+        MathRole::Math,
+    ];
+
+    /// The code stored in binary record 0x29.
+    pub fn code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_code(code: u8) -> Option<MathRole> {
+        Self::ALL.into_iter().find(|r| r.code() == code)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MathRole::Num => "num",
+            MathRole::Den => "den",
+            MathRole::Radicand => "radicand",
+            MathRole::Sup => "sup",
+            MathRole::Sub => "sub",
+            MathRole::Degree => "degree",
+            MathRole::Cell => "cell",
+            MathRole::Math => "math",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MathField {
+    pub owner: i64,
+    pub role: MathRole,
+    pub bbox: [Sp; 4],
+    pub empty: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct DisplayList {
+    /// Present only when math source ownership is enabled and tagged nodes were observed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub math_owners: Option<MathOwners>,
     pub kind: String,
     #[serde(default)]
     pub unit: String,

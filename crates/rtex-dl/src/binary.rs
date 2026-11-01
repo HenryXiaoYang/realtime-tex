@@ -362,12 +362,94 @@ pub fn decode(bytes: &[u8]) -> Result<DisplayList, BinError> {
                     None => dl.other.push(item),
                 }
             }
+            0x29 => {
+                dl.math_owners = Some(
+                    read_math_owners(&mut p)
+                        .map_err(|_| BinError::Malformed { tag, offset: start })?,
+                );
+            }
             0xFF => break,
             _ => { /* unknown record: skipped (forward compatibility) */ }
         }
     }
     dl.flags = serde_json::Value::Object(flag_map);
     Ok(dl)
+}
+
+/// Record 0x29: u32 glyph count, glyphs (i32 owner, u32 font, u32 char, i32 bbox[4]); u32 field
+/// count, fields (i32 owner, u8 role, u8 empty, u16 0, i32 bbox[4]). Nothing may follow.
+fn read_math_owners(p: &mut Reader) -> Result<crate::MathOwners, BinError> {
+    const GLYPH: usize = 28;
+    const FIELD: usize = 24;
+    let bad = |p: &Reader| BinError::Malformed {
+        tag: 0x29,
+        offset: p.pos,
+    };
+    let ng = p.u32()? as usize;
+    p.need(ng.checked_mul(GLYPH).ok_or_else(|| bad(p))?)?;
+    let mut glyphs = Vec::with_capacity(ng);
+    for _ in 0..ng {
+        glyphs.push(crate::OwnedGlyph {
+            owner: p.i32()? as i64,
+            font: p.u32()? as i64,
+            char: p.u32()? as i64,
+            bbox: read_bbox(p)?,
+        });
+    }
+    let nf = p.u32()? as usize;
+    p.need(nf.checked_mul(FIELD).ok_or_else(|| bad(p))?)?;
+    let mut fields = Vec::with_capacity(nf);
+    for _ in 0..nf {
+        let owner = p.i32()? as i64;
+        let role = crate::MathRole::from_code(p.u8()?).ok_or_else(|| bad(p))?;
+        let empty = match p.u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(bad(p)),
+        };
+        p.u16()?; // reserved
+        fields.push(crate::MathField {
+            owner,
+            role,
+            bbox: read_bbox(p)?,
+            empty,
+        });
+    }
+    if p.pos != p.b.len() {
+        return Err(bad(p));
+    }
+    Ok(crate::MathOwners { glyphs, fields })
+}
+
+fn read_bbox(p: &mut Reader) -> Result<[Sp; 4], BinError> {
+    Ok([
+        p.i32()? as Sp,
+        p.i32()? as Sp,
+        p.i32()? as Sp,
+        p.i32()? as Sp,
+    ])
+}
+
+fn write_math_owners(m: &crate::MathOwners) -> Vec<u8> {
+    let mut q = Writer(Vec::with_capacity(
+        8 + 28 * m.glyphs.len() + 24 * m.fields.len(),
+    ));
+    q.u32(m.glyphs.len() as u32);
+    for g in &m.glyphs {
+        q.i32(g.owner);
+        q.u32(g.font as u32);
+        q.u32(g.char as u32);
+        g.bbox.iter().for_each(|&v| q.i32(v));
+    }
+    q.u32(m.fields.len() as u32);
+    for f in &m.fields {
+        q.i32(f.owner);
+        q.u8(f.role.code());
+        q.u8(f.empty as u8);
+        q.u16(0);
+        f.bbox.iter().for_each(|&v| q.i32(v));
+    }
+    q.0
 }
 
 struct Writer(Vec<u8>);
@@ -600,6 +682,9 @@ pub fn encode(dl: &DisplayList) -> Vec<u8> {
         write_items(&mut body, &l.items);
         body.rec(0x11, &[]);
     }
+    if let Some(owners) = &dl.math_owners {
+        body.rec(0x29, &write_math_owners(owners));
+    }
     body.rec(0xFF, &[]);
     let mut out = Writer(Vec::new());
     out.0.extend_from_slice(MAGIC);
@@ -614,6 +699,89 @@ pub fn encode(dl: &DisplayList) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn math_owners_roundtrip() {
+        let mut dl = sample();
+        let plain = dl.to_binary();
+        let json = serde_json::to_string(&dl).unwrap();
+        assert!(!json.contains("math_owners"));
+        let owners = crate::MathOwners {
+            glyphs: vec![crate::OwnedGlyph {
+                owner: -42,
+                font: 27,
+                char: 65,
+                bbox: [-100, 20, 300, 400],
+            }],
+            fields: vec![crate::MathField {
+                owner: 0,
+                role: crate::MathRole::Num,
+                bbox: [5, 6, 5, 6],
+                empty: true,
+            }],
+        };
+        dl.math_owners = Some(owners.clone());
+        let binary = dl.to_binary();
+        let decoded = decode(&binary).unwrap();
+        assert_eq!(decoded.math_owners, Some(owners.clone()));
+        assert_eq!(decoded.to_binary(), binary);
+        let json = serde_json::to_string(&decoded).unwrap();
+        assert_eq!(
+            DisplayList::from_json(&json).unwrap().math_owners,
+            Some(owners)
+        );
+        dl.math_owners = None;
+        assert_eq!(dl.to_binary(), plain);
+    }
+
+    #[test]
+    fn math_owner_fields_reject_bad_codes_and_trailing_bytes() {
+        let field = |role: u8, empty: u8, extra: &[u8]| {
+            let mut q = Writer(Vec::new());
+            q.u32(0); // no glyphs
+            q.u32(1);
+            q.i32(7);
+            q.u8(role);
+            q.u8(empty);
+            q.u16(0);
+            [1, 2, 3, 4].iter().for_each(|&v| q.i32(v));
+            q.0.extend_from_slice(extra);
+            let mut body = Writer(Vec::new());
+            body.rec(0x29, &q.0);
+            body.rec(0xFF, &[]);
+            let mut bytes = sample().to_binary()[..16].to_vec();
+            bytes.extend(body.0);
+            decode(&bytes)
+        };
+        let ok = field(crate::MathRole::Cell.code(), 1, &[]).unwrap();
+        let f = &ok.math_owners.unwrap().fields[0];
+        assert_eq!(
+            (f.owner, f.role, f.empty, f.bbox),
+            (7, crate::MathRole::Cell, true, [1, 2, 3, 4])
+        );
+        for bad in [
+            field(0, 0, &[]),
+            field(9, 0, &[]),
+            field(1, 2, &[]),
+            field(1, 0, &[0]),
+        ] {
+            assert!(matches!(bad, Err(BinError::Malformed { tag: 0x29, .. })));
+        }
+    }
+
+    #[test]
+    fn malformed_math_owners_is_an_error() {
+        let mut body = Writer(Vec::new());
+        // One glyph announced, none present.
+        body.rec(0x29, &1u32.to_le_bytes());
+        body.rec(0xFF, &[]);
+        let mut bytes = sample().to_binary()[..16].to_vec();
+        bytes.extend(body.0);
+        assert!(matches!(
+            decode(&bytes),
+            Err(BinError::Malformed { tag: 0x29, .. })
+        ));
+    }
+
     fn sample() -> DisplayList {
         let mut fonts = BTreeMap::new();
         fonts.insert(
@@ -637,6 +805,7 @@ mod tests {
             },
         );
         DisplayList {
+            math_owners: None,
             kind: "page".into(),
             unit: "sp".into(),
             fonts,

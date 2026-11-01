@@ -14,6 +14,14 @@
 --                                                       `set` transforms what follows by the
 --                                                       matrix "a b c d" about the point (x, y)
 local M = {}
+local math_owner
+if os.getenv("RTEX_MATH_OWNER_ATTRIBUTE") then
+  math_owner = package.loaded["rtex-math"]
+  if not math_owner then
+    math_owner = dofile(kpse.find_file("rtex-math.lua", "lua") or "rtex-math.lua")
+    package.loaded["rtex-math"] = math_owner
+  end
+end
 
 local node = node
 local D = node.direct
@@ -389,6 +397,7 @@ hlist_out = function(st, box, left, base_v)
           if ef ~= 0 then w = expand(w, ef) end
           ew[c] = w
         end
+        if math_owner then math_owner.glyph(st, n, cur_h + (xo or 0), base_v - (yo or 0), w) end
         if e.virtual then
           sync_out(); st:emit_virtual(f, c, cur_h + (xo or 0), base_v - (yo or 0), ef); sync_in()
         elseif bin then
@@ -502,6 +511,7 @@ hlist_out = function(st, box, left, base_v)
       elseif id == hlist_id or id == vlist_id then
         local w, h, d = getwhd(n)
         local sh = getshift(n)
+        if math_owner then math_owner.box(st, n, cur_h, base_v + sh, w, h, d, box) end
         local par = st.attr_par and getattribute(n, st.attr_par)
         local line = par and st.attr_line and getattribute(n, st.attr_line)
         sync_out()
@@ -548,6 +558,7 @@ hlist_out = function(st, box, left, base_v)
         sync_in()
         cur_h = cur_h + w
       elseif id == math_id then
+        if math_owner then math_owner.boundary(st, n, box, cur_h, base_v, box_h, box_d) end
         local wd, st_, sh, sto, sho = getglue(n)
         local sub = getsubtype(n)
         sync_out(); st:emit({ "m", sub == 0 and "on" or "off", cur_h }); sync_in()
@@ -557,6 +568,7 @@ hlist_out = function(st, box, left, base_v)
           cur_h = cur_h + glue_advance(wd, st_, sh, sto, sho)
         end
       elseif id == whatsit_id then
+        if math_owner and math_owner.marker(st, n, cur_h, base_v) then goto continue end
         local sub = getsubtype(n)
         sync_out()
         if sub == ws_colorstack then
@@ -616,6 +628,7 @@ vlist_out = function(st, box, left, top)
       local w, h, d = getwhd(n)
       local s = getshift(n)
       cur_v = cur_v + h
+      if math_owner then math_owner.box(st, n, left + s, cur_v, w, h, d, box) end
       local par = st.attr_par and getattribute(n, st.attr_par)
       local line = par and st.attr_line and getattribute(n, st.attr_line)
       local pic = note_pic(st, n, left + s, cur_v, w, h, d)
@@ -833,6 +846,7 @@ local function result(st, kind, extra)
   for id, d in pairs(st.fonts) do fonts[tostring(id)] = d end
   local r = { kind = kind, unit = "sp", fonts = fonts, lines = st.lines, other = st.other,
               flags = st.flags, glyphs = st.glyphs, images = st.images, inserts = st.inserts }
+  if st.math_owners then r.math_owners = st.math_owners end
   if extra then for k, v in pairs(extra) do r[k] = v end end
   return r
 end
@@ -875,6 +889,7 @@ function M.paragraph_binary(boxnode, initial_color, extra_inserts)
   for k, v in pairs(st.flags) do
     buf[#buf + 1] = pack("<Bs4", 0x03, bstr(k) .. pack("<i4", type(v) == "number" and floor(v) or 1))
   end
+  if st.math_owners then buf[#buf + 1] = pack("<Bs4", 0x29, math_owner.encode(st.math_owners)) end
   buf[#buf + 1] = pack("<Bs4", 0xFF, "")
   local body = concat(buf)
   return pack("<c4I2I2I4I4", "RTDL", 1, 0, 16 + #body, 0) .. body, st.nlines, st.glyphs, w, h, d, st.flags, st.inserts

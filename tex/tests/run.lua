@@ -15,6 +15,57 @@ check("json roundtrip arrays", #back.b == 3 and back.b[3] == 3)
 check("json decode unicode escape", json.decode('"\\u00e9\\ud83d\\ude00"') == "é😀")
 check("json decode nested", json.decode('{"x":[{"y":null},{"y":-3e2}]}').x[2].y == -300)
 
+-- The table encoder (page path) must carry the same optional record as the direct
+-- paragraph encoder. Scan framed records, rather than matching a byte inside a payload,
+-- and decode the packed payload independently of the codec.
+local bin = dofile("tex/rtex-dl-bin.lua")
+local codec = dofile("tex/rtex-math-codec.lua")
+local find_file = kpse.find_file
+kpse.find_file = function(name) return "tex/" .. name end
+local function owners_record(list)
+  local bytes = bin.encode(list)
+  local pos = 17
+  while pos <= #bytes do
+    local tag, len, payload = string.unpack("<BI4", bytes, pos)
+    if tag == 0x29 then return bytes:sub(payload, payload + len - 1) end
+    pos = payload + len
+  end
+end
+local function decode_owners(p)
+  local glyphs, fields, pos = {}, {}, 1
+  local ng; ng, pos = string.unpack("<I4", p, pos)
+  for i = 1, ng do
+    local o, f, c, x0, y0, x1, y1
+    o, f, c, x0, y0, x1, y1, pos = string.unpack("<i4I4I4i4i4i4i4", p, pos)
+    glyphs[i] = { owner = o, font = f, char = c, bbox = { x0, y0, x1, y1 } }
+  end
+  local nf; nf, pos = string.unpack("<I4", p, pos)
+  for i = 1, nf do
+    local o, r, e, pad, x0, y0, x1, y1
+    o, r, e, pad, x0, y0, x1, y1, pos = string.unpack("<i4BBI2i4i4i4i4", p, pos)
+    fields[i] = { owner = o, role = codec.ROLE_NAME[r], empty = e == 1, pad = pad, bbox = { x0, y0, x1, y1 } }
+  end
+  return { glyphs = glyphs, fields = fields }, pos == #p + 1
+end
+local list = { kind = "page", fonts = {}, lines = {}, other = {} }
+check("ownership record absent by default", owners_record(list) == nil)
+-- 300 glyphs and 3 fields: crosses the codec's 128-row packing chunks.
+local mo = { g = {}, ng = 300, f = { -7, 1, 0, 1, 2, 3, 4, 0, 4, 1, 5, 6, 5, 6, 2147483647, 8, 0, -1, -2, 9, 10 }, nf = 3 }
+for r = 0, 299 do
+  local i = r * 7
+  mo.g[i + 1], mo.g[i + 2], mo.g[i + 3] = r - 42, 20 + r % 3, 97 + r
+  mo.g[i + 4], mo.g[i + 5], mo.g[i + 6], mo.g[i + 7] = r, -r, r + 10, r + 20
+end
+list.math_owners = mo
+local decoded, exact = decode_owners(owners_record(list))
+check("ownership record has no trailing bytes", exact)
+check("ownership record decodes independently", json.encode(decoded.glyphs) == json.encode(codec.to_table(mo).glyphs))
+check("ownership fields keep role, empty flag and zero padding",
+  decoded.fields[1].role == "num" and decoded.fields[2].role == "sup" and decoded.fields[2].empty
+  and decoded.fields[3].role == "math" and decoded.fields[3].owner == 2147483647
+  and decoded.fields[1].pad == 0 and decoded.fields[3].pad == 0)
+kpse.find_file = find_file
+
 -- rtex-dl arithmetic (stub the node library enough to load the module)
 node = node or {}
 node.types = node.types or function() return { [0] = "hlist", [1] = "vlist", [2] = "rule", [29] = "glyph", [12] = "glue", [13] = "kern", [28] = "margin_kern", [7] = "disc", [11] = "math", [8] = "whatsit", [14] = "penalty", [9] = "local_par", [10] = "dir", [3] = "ins", [4] = "mark", [5] = "adjust", [6] = "boundary" } end

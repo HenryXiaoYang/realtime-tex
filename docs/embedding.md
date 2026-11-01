@@ -91,6 +91,7 @@ briefly. The live engine and the background passes run on their own threads.
 | `compile_timeout` | `compile_timeout_ms` | | 5 s | a live compile that takes longer is killed and the engine restarted |
 | `pass_timeout` | `pass_timeout_ms` | | 5 min | a background or export lualatex run that takes longer is killed and the layout reports `Failed` |
 | `eligibility` | `eligibility` | `--eligibility` | `probe` | `probe` verifies unknown commands by comparison; `allowlist` only allows known ones |
+| `math_owner_attribute` | `math_owner_attribute` | `--math-owner-attribute` | none / `null` | observe host ids on this one LuaTeX attribute (`0..65535`) |
 | `trusted_macros` | `trusted_macros` | | none | macros you vouch for, treated as allow-listed |
 | `unit_envs` | `unit_envs` | | none | extra environments to treat like theorems (found automatically from `\newtheorem`) |
 | `picture_cache` | `picture_cache` | `--no-picture-cache` | on | reuse unchanged TikZ pictures from earlier passes |
@@ -98,6 +99,45 @@ briefly. The live engine and the background passes run on their own threads.
 | `fast_on_stale_context` | `fast_on_stale_context` | | on | deliver live results even when something before the unit changed since the last pass |
 | `bib_tool` | | | auto | `biber`, `bibtex` or none; auto picks from the files the pass writes |
 | `debug_dir` | `debug_dir` | `--debug-dir` | `$RTEX_DEBUG_DIR` | write a diagnostic bundle per engine failure ([development.md](development.md#when-the-live-engine-fails)) |
+
+## Math source ownership
+
+A host can opt into math hit-testing metadata by setting
+`cfg.math_owner_attribute = Some(65000)` (Rust), `"math_owner_attribute": 65000` in the C
+JSON config, or `rtex serve --math-owner-attribute 65000`. Omission or `null` in the C config
+leaves it off. Pick an attribute number that your document and its packages do not use;
+rtex does not reserve it or allocate host ids. Invalid C config values are errors.
+
+Tag your own source atoms, localizing assignments so they do not reach subsequent text:
+
+```tex
+$\begingroup\attribute65000=10
+  \frac{\attribute65000=11 a}{\attribute65000=12 b}
+\endgroup$
+```
+
+With this option, the allow-list accepts decimal literal assignments to that attribute
+(`\attribute65000=11`, spaces and a signed integer value allowed), plus balanced
+`\begingroup`/`\endgroup`. Other attribute numbers, register expressions and attribute
+primitives are not added to the allow-list. Probe mode's existing verification rules still
+apply to vocabulary outside the allow-list. The observer reads the node attributes in both
+live compiles and background passes; it does not rewrite source or track offsets, revisions,
+parent ids or macro expansion. Keep that mapping in the host, update it with each edit, and
+interpret metadata only with the event's matching `source_revision`.
+
+Tagged glyphs and observed math-field boxes arrive in `dl.math_owners`, including zero-size
+anchors for empty numerators, denominators, scripts and matrix cells. Attributes must be in
+force when TeX creates the relevant nodes; packed fields can carry the field's id or their
+containing atom's id. They are not inferred from a source tree. See
+[display-list.md](display-list.md#optional-math-ownership) for roles, coordinates and encoding.
+Tags can also cover text inside math, including CJK text with a suitable LuaLaTeX setup.
+Leaving the option unset preserves display-list bytes and PDF output. Enabling it adds
+metadata and zero-size markers only in truly empty fields; it leaves nonempty fields alone.
+
+**Limitation:** an empty radical degree under unicode-math currently has no surviving output
+anchor. rtex does not fabricate a position for it. Classic LaTeX's degree may instead appear
+as a `math` boundary box. These observations are not a complete source syntax tree; hosts
+must handle missing positions and multiple output boxes for an id.
 
 ## Events
 

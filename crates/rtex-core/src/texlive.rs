@@ -16,6 +16,8 @@ pub struct TexLive {
     /// The main file's folder relative to the project (`cv/sop` for `cv/sop/sop.tex`), handed to
     /// LuaLaTeX as `$RTEX_MAIN_DIR`; `None` for a main file at the top of the project.
     pub main_dir: Option<String>,
+    /// Optional source ownership attribute, passed to the live and capture processes.
+    pub math_owner_attribute: Option<u16>,
 }
 
 /// TeX run first on every LuaLaTeX command line rtex builds: puts the main file's folder and
@@ -89,6 +91,7 @@ impl TexLive {
             rtex_texdir: find_rtex_texdir()?,
             project_dir: None,
             main_dir: None,
+            math_owner_attribute: None,
         })
     }
 
@@ -112,6 +115,11 @@ impl TexLive {
             .env("max_print_line", "100000")
             .env("error_line", "254")
             .env("half_error_line", "238");
+        // Do not let an ambient environment variable opt a session into observation.
+        c.env_remove("RTEX_MATH_OWNER_ATTRIBUTE");
+        if let Some(n) = self.math_owner_attribute {
+            c.env("RTEX_MATH_OWNER_ATTRIBUTE", n.to_string());
+        }
         if let Some(d) = &self.bin_dir {
             crate::paths::prepend_bin_dir(&mut c, d);
         }

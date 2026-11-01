@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Optional `math_owner_attribute` in Rust, C/JSON and `rtex serve` configuration: hosts can
+  attach opaque ids to math source with one LuaTeX attribute and receive glyph ownership
+  and math-field boxes in `math_owners` display-list metadata (binary record `0x29`). Truly
+  empty fields get zero-size anchors without changing nonempty fields or PDF output. Off
+  by default; unicode-math's empty radical degree currently has no output anchor.
+
 ## 0.0.6 (2026-11-01)
 
 ### Changed
