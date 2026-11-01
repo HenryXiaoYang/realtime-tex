@@ -44,6 +44,7 @@ pub struct VerifyOpts {
     pub pic_cache: bool,
     /// With `pic_cache`: fail unless at least this many pictures were recorded and reused.
     pub min_cached: Option<usize>,
+    pub math_owner_attribute: Option<u16>,
 }
 
 #[derive(Serialize, Default)]
@@ -139,7 +140,8 @@ fn row_text(l: &Line) -> String {
 }
 
 pub fn run(opts: VerifyOpts) -> Result<Report> {
-    let tl = TexLive::discover()?;
+    let mut tl = TexLive::discover()?;
+    tl.math_owner_attribute = opts.math_owner_attribute;
     let project = rtex_core::paths::canonical(&opts.project)?;
     std::fs::create_dir_all(&opts.build)?;
     println!("== verify {} ({})", project.display(), opts.main);
@@ -147,6 +149,7 @@ pub fn run(opts: VerifyOpts) -> Result<Report> {
     let preamble = rtex_core::project_preamble(&project, &opts.main)?;
     let mut policy = Policy::from_preamble(&preamble, &[], &[]);
     policy.permissive = opts.permissive;
+    policy.math_owner_attribute = opts.math_owner_attribute;
     let unit_envs = policy.unit_envs_env();
     // Both builds run to aux convergence (labels, TOC, bibliography) exactly like the
     // background compiler does: a single first pass would leave every \ref as "??" while

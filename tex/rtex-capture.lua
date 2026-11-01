@@ -678,7 +678,9 @@ function C.finish()
   if not f then error("rtex-capture: cannot write " .. path .. ": " .. tostring(err)) end
   f:write(json.encode(out))
   f:close()
+  local math_owner = package.loaded["rtex-math"]
   for i, page in ipairs(C.pages) do
+    if page.math_owners and math_owner then page.math_owners = math_owner.to_table(page.math_owners) end
     local pf = assert(io.open(out_path(string.format("%s.rtex-page%d.json", C.jobname, i)), "w"))
     pf:write(json.encode(page))
     pf:close()

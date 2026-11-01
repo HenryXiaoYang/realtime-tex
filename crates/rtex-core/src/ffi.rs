@@ -36,7 +36,7 @@ pub extern "C" fn rtex_version() -> *const c_char {
 
 /// Open a session. `config_json`: {"project_root": "...", "main_file": "main.tex",
 /// "build_dir": "...", "debounce_ms": 300, "max_passes": 5, "trusted_macros": [...],
-/// "fast_on_stale_context": true, "compile_timeout_ms": 5000, "pass_timeout_ms": 300000, "fast_budget_ms": 50, "unit_envs": [...], "warm_background": true, "eligibility": "probe"|"allowlist", "picture_cache": true, "debug_dir": "/path"}. On failure returns null and
+/// "fast_on_stale_context": true, "compile_timeout_ms": 5000, "pass_timeout_ms": 300000, "fast_budget_ms": 50, "unit_envs": [...], "warm_background": true, "eligibility": "probe"|"allowlist", "picture_cache": true, "math_owner_attribute": null, "debug_dir": "/path"}. On failure returns null and
 /// writes an error message to `*err_out` (free with rtex_string_free).
 #[no_mangle]
 pub unsafe extern "C" fn rtex_session_open(
@@ -87,6 +87,16 @@ pub unsafe extern "C" fn rtex_session_open(
     }
     if let Some(b) = v.get("picture_cache").and_then(|x| x.as_bool()) {
         cfg.picture_cache = b;
+    }
+    if let Some(n) = v.get("math_owner_attribute").filter(|n| !n.is_null()) {
+        match n.as_u64().and_then(|n| u16::try_from(n).ok()) {
+            Some(n) => cfg.math_owner_attribute = Some(n),
+            None => {
+                return fail(
+                    "config.math_owner_attribute: expected an integer in 0..65535 or null".into(),
+                )
+            }
+        }
     }
     if let Some(d) = v.get("debug_dir").and_then(|x| x.as_str()) {
         cfg.debug_dir = Some(d.into());
@@ -338,5 +348,31 @@ pub unsafe extern "C" fn rtex_dl_to_json(bytes: *const u8, len: usize) -> *mut c
     match DisplayList::from_binary(slice) {
         Ok(dl) => cstr(serde_json::to_string(&dl).unwrap()),
         Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_math_owner_attribute_is_not_truncated_or_ignored() {
+        for value in ["-1", "65536", "1.5", "true", "\"65000\""] {
+            let cfg = CString::new(format!(
+                "{{\"project_root\":\".\",\"math_owner_attribute\":{value}}}"
+            ))
+            .unwrap();
+            let mut err = std::ptr::null_mut();
+            unsafe {
+                let s = rtex_session_open(cfg.as_ptr(), &mut err);
+                assert!(s.is_null());
+                assert!(!err.is_null());
+                assert!(CStr::from_ptr(err)
+                    .to_str()
+                    .unwrap()
+                    .contains("math_owner_attribute"));
+                rtex_string_free(err);
+            }
+        }
     }
 }

@@ -1192,6 +1192,8 @@ pub struct Policy {
     /// ineligible (structural reasons still do); the fast result is validated against the layout
     /// instead (`rtex verify --permissive`).
     pub permissive: bool,
+    /// The one literal attribute assignment allowed for host math ownership.
+    pub math_owner_attribute: Option<u16>,
     /// User macros whose body starts with a heading command (`\newcommand{\unnumberedsection}[1]{\section*{#1}…}`):
     /// macro name → heading name. A span starting with one has that heading's shape.
     pub heading_macros: BTreeMap<String, String>,
@@ -1286,6 +1288,7 @@ impl Policy {
             packages,
             trusted_math: BTreeSet::new(),
             permissive: false,
+            math_owner_attribute: None,
             heading_macros: BTreeMap::new(),
             user_inner_envs: BTreeSet::new(),
             list_envs,
@@ -2186,6 +2189,15 @@ impl<'a> Scan<'a> {
             name = (n as char).to_string();
             self.i += 2;
         }
+        if self.policy.math_owner_attribute.is_some() {
+            if name == "attribute" && self.owner_assignment() {
+                return true;
+            }
+            if name == "begingroup" || name == "endgroup" {
+                self.character(if name == "begingroup" { b'{' } else { b'}' }, in_math);
+                return true;
+            }
+        }
         if name == "begin" {
             self.begin_environment(in_math);
             return true;
@@ -2200,6 +2212,31 @@ impl<'a> Scan<'a> {
             return true;
         }
         self.macro_word(name, in_math);
+        true
+    }
+
+    // Only decimal literals with an explicit '='. Register expressions and the other
+    // attribute primitives still go through the ordinary (rejecting) vocabulary check.
+    fn owner_assignment(&mut self) -> bool {
+        let rest = &self.text[self.i..];
+        let Some((number, value)) = rest.trim_start().split_once('=') else {
+            return false;
+        };
+        if number.trim().parse::<u16>().ok() != self.policy.math_owner_attribute {
+            return false;
+        }
+        let value_start = rest.len() - value.trim_start().len();
+        let bytes = &rest.as_bytes()[value_start..];
+        let sign = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
+        let digits = bytes[sign..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
+        let end = value_start + sign + digits;
+        if digits == 0 || rest[value_start..end].parse::<i32>().is_err() {
+            return false;
+        }
+        self.i += end;
         true
     }
 
@@ -2803,6 +2840,7 @@ mod tests {
             tabularx: true,
             cite_ok: true,
             permissive: false,
+            math_owner_attribute: None,
             heading_macros: BTreeMap::new(),
             packages: [
                 "hyperref", "url", "natbib", "siunitx", "ulem", "listings", "multirow", "colortbl",
@@ -2820,6 +2858,44 @@ mod tests {
     fn reasons(s: &str) -> Vec<Reason> {
         check_source(s, &pol())
     }
+    #[test]
+    fn math_owner_attribute_is_a_literal_opt_in() {
+        let mut p = pol();
+        let src = r"$\begingroup\attribute65000=42 \frac{x}{}\endgroup$";
+        assert!(!classify_source(src, &p).1.is_empty());
+        p.math_owner_attribute = Some(65000);
+        for good in [
+            src,
+            r"$\attribute 65000 = -42 x$",
+            r"\begingroup\attribute65000=0 text\endgroup",
+            r"$\text{\attribute65000=17 abc}$",
+            r"$\attribute65000=-2147483647 x$",
+            r"${\attribute65000=+2147483647 x}$",
+        ] {
+            assert!(
+                classify_source(good, &p).1.is_empty(),
+                "{good}: {:?}",
+                classify_source(good, &p).1
+            );
+        }
+        for bad in [
+            r"$\attribute65001=42 x$",
+            r"$\attribute65000 x$",
+            r"$\attribute65000=\count0 x$",
+            r"$\attribute65000=2147483648 x$",
+            r"$\attribute65000=- x$",
+            r"$\attribute\count0=42 x$",
+            r"$\attributedef\foo=65000 x$",
+            r"$\global\attribute65000=1 x$",
+            r"$\attribute65000=1 \endgroup x$",
+        ] {
+            assert!(!classify_source(bad, &p).1.is_empty(), "{bad}");
+        }
+        p.math_owner_attribute = Some(0);
+        assert!(classify_source(r"$\attribute0=1 x$", &p).1.is_empty());
+        assert!(!classify_source(r"$\attribute65000=1 x$", &p).1.is_empty());
+    }
+
     #[test]
     fn plain_and_fonts_ok() {
         assert!(ok(

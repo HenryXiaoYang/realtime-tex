@@ -64,6 +64,8 @@ pub struct SessionConfig {
     /// Background passes reuse unchanged pictures (tikzpicture, circuitikz) from an earlier
     /// pass's PDF instead of drawing them again (default true; `docs/how-it-works.md`).
     pub picture_cache: bool,
+    /// Observe opaque host ids carried by this LuaTeX attribute (off by default).
+    pub math_owner_attribute: Option<u16>,
     /// Debugging: a directory the session writes diagnostics into (default: `$RTEX_DEBUG_DIR`
     /// when set, else none). Every engine failure (watchdog, state mismatch, crash) leaves a
     /// bundle there with the request's source, context and picture entries, the server's
@@ -142,6 +144,7 @@ impl SessionConfig {
             warm_background: true,
             eligibility: EligibilityMode::Probe,
             picture_cache: true,
+            math_owner_attribute: None,
             debug_dir: std::env::var_os("RTEX_DEBUG_DIR")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from),
@@ -401,6 +404,7 @@ impl Session {
         let project_root = crate::paths::canonical(&cfg.project_root).context("project root")?;
         tl.project_dir = Some(project_root.clone());
         tl.main_dir = crate::paths::folder(&cfg.main_file);
+        tl.math_owner_attribute = cfg.math_owner_attribute;
         let cfg = SessionConfig {
             project_root,
             main_file: crate::paths::key(&cfg.main_file),
@@ -430,6 +434,7 @@ impl Session {
         let preamble_inputs = preamble_input_set(&texts, &cfg.main_file);
         let mut policy = Policy::from_preamble(&preamble, &cfg.trusted_macros, &cfg.unit_envs);
         policy.permissive = cfg.eligibility == EligibilityMode::Probe;
+        policy.math_owner_attribute = cfg.math_owner_attribute;
         let rules = policy.segment_rules();
         // the main file first so its span ids come first
         files.insert(
@@ -684,6 +689,7 @@ impl Session {
                     &self.shared.cfg.unit_envs,
                 );
                 policy.permissive = self.shared.cfg.eligibility == EligibilityMode::Probe;
+                policy.math_owner_attribute = self.shared.cfg.math_owner_attribute;
                 let rules = policy.segment_rules();
                 *self.shared.policy.lock() = policy;
                 drop(files);

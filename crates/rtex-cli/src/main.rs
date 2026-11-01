@@ -82,6 +82,9 @@ enum Cmd {
         /// With --pic-cache: fail unless at least this many pictures were recorded and reused.
         #[arg(long)]
         min_cached: Option<usize>,
+        /// Observe host math ids carried by this LuaTeX attribute.
+        #[arg(long)]
+        math_owner_attribute: Option<u16>,
     },
     /// JSON-lines session front end (commands on stdin, events on stdout).
     Serve {
@@ -98,6 +101,9 @@ enum Cmd {
         /// How units qualify for the fast path: probe (default) or allowlist.
         #[arg(long, default_value = "probe")]
         eligibility: String,
+        /// Observe host math ids carried by this LuaTeX attribute.
+        #[arg(long)]
+        math_owner_attribute: Option<u16>,
         /// Draw every picture environment on every background pass instead of reusing the
         /// unchanged ones from an earlier pass's PDF.
         #[arg(long)]
@@ -229,6 +235,7 @@ fn main() -> anyhow::Result<()> {
             expect_differing,
             pic_cache,
             min_cached,
+            math_owner_attribute,
         } => {
             let r = verify::run(verify::VerifyOpts {
                 project,
@@ -246,6 +253,7 @@ fn main() -> anyhow::Result<()> {
                 expect_differing,
                 pic_cache,
                 min_cached,
+                math_owner_attribute,
             })?;
             if !(r.layer1_pass
                 && r.layer2_pass
@@ -262,6 +270,7 @@ fn main() -> anyhow::Result<()> {
             build,
             fast_budget_ms,
             eligibility,
+            math_owner_attribute,
             no_picture_cache,
             debug_dir,
         } => serve::run(
@@ -270,6 +279,7 @@ fn main() -> anyhow::Result<()> {
             build,
             fast_budget_ms,
             &eligibility,
+            math_owner_attribute,
             !no_picture_cache,
             debug_dir,
         )?,

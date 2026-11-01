@@ -85,6 +85,14 @@ function M.encode(dl)
     write_items(buf, line.items)
     rec(buf, 0x11, "")
   end
+  if dl.math_owners then
+    local codec = package.loaded["rtex-math-codec"]
+    if not codec then
+      codec = dofile(kpse.find_file("rtex-math-codec.lua", "lua") or "rtex-math-codec.lua")
+      package.loaded["rtex-math-codec"] = codec
+    end
+    rec(buf, 0x29, codec.encode(dl.math_owners))
+  end
   rec(buf, 0xFF, "")
   local body = concat(buf)
   local header = pack("<c4I2I2I4I4", "RTDL", 1, is_page and 1 or 0, 16 + #body, 0)
