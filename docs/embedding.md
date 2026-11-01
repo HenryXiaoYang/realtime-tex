@@ -134,10 +134,12 @@ Tags can also cover text inside math, including CJK text with a suitable LuaLaTe
 Leaving the option unset preserves display-list bytes and PDF output. Enabling it adds
 metadata and zero-size markers only in truly empty fields; it leaves nonempty fields alone.
 
-**Limitation:** an empty radical degree under unicode-math currently has no surviving output
-anchor. rtex does not fabricate a position for it. Classic LaTeX's degree may instead appear
-as a `math` boundary box. These observations are not a complete source syntax tree; hosts
-must handle missing positions and multiple output boxes for an id.
+Empty unicode-math radical degrees have a computed `degree` point (`empty: true`): LuaTeX
+discards their zero-width boxes, so rtex uses the converted radical delimiter and the
+effective degree kern/raise math parameters to report the degree's left edge at its baseline.
+The owner and parameters travel as attributes; no degree node is inserted. Classic LaTeX's
+degree may instead appear as a `math` boundary box. These observations are not a complete
+source syntax tree; hosts must handle missing positions and multiple output boxes for an id.
 
 ## Events
 
