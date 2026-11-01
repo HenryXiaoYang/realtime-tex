@@ -192,7 +192,7 @@ fn assert_owners(dl: &DisplayList) {
     );
 }
 
-fn capture_identity(name: &str, source: &str) {
+fn capture_identity(name: &str, source: &str, check: impl Fn(&DisplayList)) {
     let Some((mut tl, root, project)) = setup(name, source) else {
         return;
     };
@@ -203,7 +203,7 @@ fn capture_identity(name: &str, source: &str) {
     let on = run_capture(&tl, &project, "main.tex", &root.join("on"), true).unwrap();
     assert!(on.exit_ok);
     let mut dl = on.page(1).unwrap();
-    assert_owners(&dl);
+    check(&dl);
     dl.math_owners = None;
     assert_eq!(dl, off.page(1).unwrap(), "ownership changed drawing");
     let clean = run_pass(
@@ -233,7 +233,7 @@ fn capture_identity(name: &str, source: &str) {
 
 #[test]
 fn owners_and_empty_fields_preserve_output() {
-    capture_identity("cm", SOURCE);
+    capture_identity("cm", SOURCE, assert_owners);
 }
 
 #[test]
@@ -251,9 +251,178 @@ fn unicode_math_owners_and_empty_fields_preserve_output() {
             "\\usepackage{amsmath}",
             "\\usepackage{amsmath}\n\\usepackage{unicode-math}",
         ),
+        |dl| {
+            assert_owners(dl);
+            empty(dl, 90, "degree");
+        },
     );
-    // unicode-math's empty radical degree has no surviving output anchor. It is deliberately
-    // not fabricated from a nearby box; see docs/embedding.md.
+}
+
+fn assert_unicode_degrees(dl: &DisplayList) {
+    let m = dl.math_owners.as_ref().unwrap();
+    // Each pair starts at the same paragraph origin. Compare the derived point with
+    // an actual nonempty degree box's left edge and its glyph's baseline, normalized
+    // to each line. This uses observed output, not the MATH formula under test.
+    for owner in [201, 221, 241, 261] {
+        let point = empty(dl, owner, "degree");
+        assert_eq!(
+            m.fields
+                .iter()
+                .filter(|f| f.owner == owner && f.role == MathRole::Degree)
+                .count(),
+            1,
+            "duplicate empty degree"
+        );
+        let actual = m
+            .fields
+            .iter()
+            .find(|f| f.owner == owner + 11 && f.role == MathRole::Degree && !f.empty)
+            .expect("real nonempty degree box");
+        let locate = |tag, ch| {
+            dl.lines
+                .iter()
+                .find_map(|line| {
+                    line.items.iter().find_map(|it| match it {
+                        Item::Glyph {
+                            font, char, x, y, ..
+                        } if *char == ch
+                            && m.glyphs.iter().any(|g| {
+                                g.owner == tag
+                                    && g.font == *font
+                                    && g.char == ch
+                                    && g.bbox[0] == *x
+                                    && g.bbox[1] <= *y
+                                    && *y <= g.bbox[3]
+                            }) =>
+                        {
+                            Some((line.x, line.y, *y, *font))
+                        }
+                        _ => None,
+                    })
+                })
+                .expect("observed glyph and its line")
+        };
+        let (px, py, _, empty_font) = locate(owner, 8730);
+        let (ax, ay, baseline, _) = locate(owner + 11, 51);
+        let (_, _, _, actual_font) = locate(owner + 10, 8730);
+        assert_eq!(empty_font, actual_font, "same font and size in each pair");
+        let predicted = [point.bbox[0] - px, point.bbox[1] - py];
+        let observed = [actual.bbox[0] - ax, baseline - ay];
+        // LuaTeX dimensions and display-list coordinates are integer scaled points.
+        // Allow one sp (1/65536 TeX pt) for integer division/coordinate quantization.
+        const TOLERANCE_SP: i64 = 1;
+        eprintln!("degree {owner}: derived={predicted:?}, observed={observed:?}, tolerance={TOLERANCE_SP}sp");
+        for (p, a) in predicted.into_iter().zip(observed) {
+            assert!((p - a).abs() <= TOLERANCE_SP, "degree {owner}: {p} vs {a}");
+        }
+        let radical = m
+            .glyphs
+            .iter()
+            .find(|g| g.owner == owner && g.char == 8730)
+            .unwrap();
+        assert!(radical.bbox[0] <= point.bbox[0] && point.bbox[0] <= radical.bbox[2]);
+        assert!(radical.bbox[1] <= point.bbox[1]);
+        assert!(2 * point.bbox[1] < radical.bbox[1] + radical.bbox[3]);
+    }
+    empty(dl, 221, "radicand");
+    assert_eq!(
+        DisplayList::from_binary(&dl.to_binary())
+            .unwrap()
+            .math_owners,
+        dl.math_owners
+    );
+}
+
+#[test]
+fn unicode_empty_degrees_match_real_degree_boxes_and_preserve_output() {
+    let Ok(tl) = TexLive::discover() else {
+        eprintln!("SKIP: no lualatex");
+        return;
+    };
+    if !package(&tl, "unicode-math.sty") {
+        return;
+    }
+    let source = include_str!("../../../fixtures/research/math-owners-unicode/main.tex");
+    capture_identity("unicode-degree", source, assert_unicode_degrees);
+    let (mut tl, root, project) = setup("unicode-degree-live", source).unwrap();
+    tl.math_owner_attribute = Some(65000);
+    let capture = run_capture(&tl, &project, "main.tex", &root.join("capture"), true).unwrap();
+    assert!(capture.exit_ok);
+    let context = capture
+        .json
+        .paragraphs
+        .iter()
+        .find(|u| u.is_top_level())
+        .unwrap()
+        .context_json();
+    let preamble = rtex_core::project_preamble(&project, "main.tex").unwrap();
+    let mut server =
+        FastServer::spawn(&tl, &project, &root.join("live"), &preamble, 1, None).unwrap();
+    server.set_context(1, &context).unwrap();
+    let body = source.split_once("\\begin{document}").unwrap().1;
+    let body = body.split_once("\\end{document}").unwrap().0;
+    let (reply, _) = server.compile(1, body).unwrap();
+    assert_eq!(
+        reply.status, "ok",
+        "{:?} {:?}",
+        reply.errors, reply.internal
+    );
+    assert_unicode_degrees(reply.dl.as_ref().unwrap());
+    server.shutdown().unwrap();
+
+    let mut cfg = SessionConfig::new(&project, "main.tex");
+    cfg.build_dir = root.join("session");
+    cfg.math_owner_attribute = Some(65000);
+    let s = Session::open(cfg).unwrap();
+    let (layout, _) = s.wait_for(Duration::from_secs(120), |e| {
+        matches!(
+            e,
+            Event::LayoutUpdate {
+                convergence: Convergence::Converged,
+                ..
+            }
+        )
+    });
+    assert!(matches!(
+        layout,
+        Some(Event::LayoutUpdate {
+            compile: CompileStatus::Ok,
+            ..
+        })
+    ));
+    let out = root.join("export.pdf");
+    let job = s.export_pdf(&out);
+    let (export, _) = s.wait_for(
+        Duration::from_secs(120),
+        |e| matches!(e, Event::PdfExported { job_id, .. } if *job_id == job),
+    );
+    assert!(matches!(
+        export,
+        Some(Event::PdfExported {
+            status: CompileStatus::Ok,
+            converged: true,
+            ..
+        })
+    ));
+    // A clean build with observation disabled is also the export identity oracle.
+    tl.math_owner_attribute = None;
+    let clean = run_pass(
+        &tl,
+        &project,
+        "main.tex",
+        &root.join("clean"),
+        5,
+        BibTool::Auto,
+        false,
+    )
+    .unwrap();
+    assert!(clean.aux_stable && clean.capture.exit_ok);
+    assert_eq!(
+        std::fs::read(out).unwrap(),
+        std::fs::read(clean.capture.pdf).unwrap()
+    );
+    s.close();
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
