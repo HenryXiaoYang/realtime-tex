@@ -156,3 +156,10 @@ rtex verify --project fixtures/research/math-owners --math-owner-attribute 65000
 The fixture uses classic TFM math, which the optional display-list rasterizer cannot draw.
 Use a unicode-math version of the fixture for the additional `--raster` check. The integration
 tests compare PDFs byte-for-byte with observation on and off for both font setups.
+
+`fixtures/research/math-owners-unicode` pairs empty radical degrees with real `[3]` boxes
+in Latin Modern Math, including an empty radicand, scriptstyle and a larger font size.
+`math_owners.rs` compares each computed point with the real degree box's left edge and glyph
+baseline relative to its line origin (1sp tolerance for integer dimension quantization),
+checks capture/live output, and compares capture/export PDFs with observation off and clean
+builds. Verify this fixture with `--math-owner-attribute 65000 --min-eligible 8 --raster`.

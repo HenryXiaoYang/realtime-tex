@@ -185,5 +185,11 @@ A truly empty sub-mlist gets a zero-size marker at its typeset position, reporte
 `empty: true` with a point box. Empty math boundaries (including matrix cells) also give point
 boxes. Hosts can enlarge these for hit-testing without changing typesetting. Nonempty math
 fields receive no markers: putting a marker before a character can change italic correction.
-An empty radical degree under unicode-math can disappear during conversion and has no output
-anchor; it is not reported at an invented nearby position. See [embedding.md](embedding.md#math-source-ownership).
+LuaTeX discards a zero-width radical degree under unicode-math. Its `degree` point instead
+uses the converted radical box, the effective `RadicalKernBeforeDegree` and
+`RadicalDegreeBottomRaisePercent` math parameters: the leading degree kern gives x, and
+the radical delimiter's height, depth and shift give the degree baseline. Only attributes
+carry these observations through conversion; no extra degree nodes alter the output.
+The point is the degree's left edge at its baseline, within the radical glyph's horizontal
+span for Latin Modern Math, rather than necessarily left of the glyph's origin.
+See [embedding.md](embedding.md#math-source-ownership).

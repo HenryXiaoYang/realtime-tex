@@ -23,14 +23,22 @@ local SUB_USER_DEFINED = node.subtype('user_defined')
 -- Field roles, as stable codes in the binary record and names in JSON.
 local ROLE = { num = 1, den = 2, radicand = 3, sup = 4, sub = 5, degree = 6, cell = 7, math = 8 }
 
-local box_role, fraction_subtype, cell_subtype = {}, nil, nil
+local box_role, fraction_subtype, cell_subtype, radical_rule_subtype = {}, nil, nil, nil
 local hlist_roles = { numerator = ROLE.num, denominator = ROLE.den, nucleus = ROLE.radicand,
   sup = ROLE.sup, sub = ROLE.sub, degree = ROLE.degree }
 for code, name in pairs(node.subtypes('hlist')) do
   box_role[code] = hlist_roles[name]
   if name == 'fraction' then fraction_subtype = code elseif name == 'cell' then cell_subtype = code end
 end
+for code, name in pairs(node.subtypes('vlist')) do
+  if name == 'radical' then radical_rule_subtype = code end
+end
 local marker_id = luatexbase.new_whatsit('math_owner', 'rtex')
+-- LuaTeX drops a degree box of width zero. Carry only metadata through the
+-- radical noad's attributes to its output box; never give the degree a width.
+local degree_owner = luatexbase.new_attribute('rtex.empty-degree-owner')
+local degree_before = luatexbase.new_attribute('rtex.empty-degree-before')
+local degree_raise = luatexbase.new_attribute('rtex.empty-degree-raise')
 
 -- Strides of the flat arrays: glyph = owner, font, char, x0, y0, x1, y1;
 -- field = owner, role code, empty (0/1), x0, y0, x1, y1.
@@ -84,6 +92,24 @@ function M.glyph(st, n, x, y, w)
 end
 
 function M.box(st, n, x, y, w, h, d, parent)
+  local empty_owner = getattribute(n, degree_owner)
+  if empty_owner ~= nil and getid(n) == ID_HLIST then
+    local sign = getlist(n)
+    local bar = sign and getnext(sign)
+    -- make_radical's packed output: delimiter box followed by the overbar vlist.
+    -- A large delimiter can itself be an assembled box. Require the actual
+    -- radical structure rather than guessing from the delimiter's subtype.
+    if sign and (getid(sign) == ID_HLIST or getid(sign) == ID_VLIST)
+      and bar and getid(bar) == ID_VLIST and getsubtype(bar) == radical_rule_subtype then
+      local _, sh, sd = getwhd(sign)
+      local before, raise = getattribute(n, degree_before), getattribute(n, degree_raise)
+      -- Same baseline and leading kern as LuaTeX's real degree box. The after-
+      -- degree kern positions the sign after a nonempty degree, not this point.
+      -- xn_over_d truncates toward zero, as does the integral part of math.modf.
+      local up = math.modf((sh + sd) * raise / 100)
+      field(st, empty_owner, ROLE.degree, x + before, y + D.getshift(sign) + sd - up, 0, 0, 0, true)
+    end
+  end
   local role = box_role[getsubtype(n)]
   -- Repacking a narrower numerator/denominator to the fraction width can reset
   -- its subtype to unknown. Their order in the fraction vlist is still stable.
@@ -148,9 +174,27 @@ local FRACTION_FIELDS = { 'num', ROLE.num, 'denom', ROLE.den }
 local RADICAL_FIELDS = { 'nucleus', ROLE.radicand, 'degree', ROLE.degree, 'sup', ROLE.sup, 'sub', ROLE.sub }
 local KIND_FIELDS = { [ID_NOAD] = NOAD_FIELDS, [ID_ACCENT] = NOAD_FIELDS,
   [ID_FRACTION] = FRACTION_FIELDS, [ID_RADICAL] = RADICAL_FIELDS }
+local ID_STYLE, ID_CHOICE = node.id('style'), node.id('choice')
+local STYLES = { 'display', 'crampeddisplay', 'text', 'crampedtext',
+  'script', 'crampedscript', 'scriptscript', 'crampedscriptscript' }
+local STYLE_NUMBER = {}
+for i, name in ipairs(STYLES) do STYLE_NUMBER[name] = i - 1 end
+local CHOICES = { 'display', 'text', 'script', 'scriptscript' }
+
+local function field_style(id, name, style)
+  if name == 'sup' then return 4 + 2 * (style // 4) + style % 2 end
+  if name == 'sub' then return 5 + 2 * (style // 4) end
+  if name == 'degree' then return 6 end
+  if id == ID_FRACTION then
+    local num = math.min(style + 2, 6 + style % 2)
+    return name == 'denom' and (num | 1) or num
+  end
+  if id == ID_RADICAL or id == ID_ACCENT then return style | 1 end
+  return style
+end
 
 local mark_list
-local function mark_fields_of(n, fields)
+local function mark_fields_of(n, fields, style)
   for i = 1, #fields, 2 do
     local child = getfield(n, fields[i])
     if child and getid(child) == ID_SUB_MLIST then
@@ -158,6 +202,13 @@ local function mark_fields_of(n, fields)
       local owner = getattribute(child, attr)
       if owner == nil then owner = getattribute(n, attr) end
       if head == nil and role ~= 0 and owner ~= nil then
+        if getid(n) == ID_RADICAL and role == ROLE.degree then
+          local noad = D.tonode(n)
+          node.set_attribute(noad, degree_owner, owner)
+          node.set_attribute(noad, degree_before, tex.getmath('radicaldegreebefore', STYLES[style + 1]))
+          node.set_attribute(noad, degree_raise, tex.getmath('radicaldegreeraise', STYLES[style + 1]))
+          goto next_field
+        end
         local marker = D.new(ID_WHATSIT, SUB_USER_DEFINED)
         D.setfield(marker, 'user_id', marker_id)
         D.setfield(marker, 'type', 100)
@@ -167,24 +218,27 @@ local function mark_fields_of(n, fields)
         node.set_attribute(D.tonode(marker), attr, owner)
         D.setfield(child, 'head', marker)
       else
-        mark_list(head)
+        mark_list(head, field_style(getid(n), fields[i], style))
       end
     end
+    ::next_field::
   end
 end
 
-mark_list = function(n)
+mark_list = function(n, style)
   while n do
     local id = getid(n)
     local fields = KIND_FIELDS[id]
-    if fields then mark_fields_of(n, fields)
-    elseif id == ID_SUB_MLIST then mark_list(getfield(n, 'head')) end
+    if fields then mark_fields_of(n, fields, style)
+    elseif id == ID_SUB_MLIST then mark_list(getfield(n, 'head'), style)
+    elseif id == ID_STYLE then style = getsubtype(n)
+    elseif id == ID_CHOICE then mark_list(getfield(n, CHOICES[style // 2 + 1]), style) end
     n = getnext(n)
   end
 end
 
-luatexbase.add_to_callback('pre_mlist_to_hlist_filter', function(head)
-  if head then mark_list(D.todirect(head)) end
+luatexbase.add_to_callback('pre_mlist_to_hlist_filter', function(head, style)
+  if head then mark_list(D.todirect(head), assert(STYLE_NUMBER[style])) end
   return head
 end, 'rtex.math-owner')
 

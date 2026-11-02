@@ -8,7 +8,12 @@
   attach opaque ids to math source with one LuaTeX attribute and receive glyph ownership
   and math-field boxes in `math_owners` display-list metadata (binary record `0x29`). Truly
   empty fields get zero-size anchors without changing nonempty fields or PDF output. Off
-  by default; unicode-math's empty radical degree currently has no output anchor.
+  by default.
+
+### Fixed
+
+- Empty unicode-math radical degrees now report a zero-size `degree` ownership point,
+  derived from the converted radical and its MATH parameters without changing PDF output.
 
 ## 0.0.6 (2026-11-01)
 
