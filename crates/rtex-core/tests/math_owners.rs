@@ -464,7 +464,7 @@ fn live_edit_and_export_keep_owners() {
         cfg.warm_background = warm;
         cfg.fast_budget = Duration::from_secs(5);
         let s = Session::open(cfg).unwrap();
-        let (ev, _) = s.wait_for(Duration::from_secs(120), |e| {
+        let (ev, earlier) = s.wait_for(Duration::from_secs(120), |e| {
             matches!(
                 e,
                 Event::LayoutUpdate {
@@ -475,16 +475,28 @@ fn live_edit_and_export_keep_owners() {
         });
         let Some(Event::LayoutUpdate {
             compile,
-            pages_changed,
             eligible_paragraphs,
             ..
-        }) = ev
+        }) = &ev
         else {
             panic!("no layout")
         };
-        assert_eq!(compile, CompileStatus::Ok);
+        assert_eq!(*compile, CompileStatus::Ok);
         assert_eq!(eligible_paragraphs.len(), 10);
-        assert_owners(&pages_changed[0].dl);
+        // pages_changed only lists pages that changed in that pass. A provisional layout
+        // can deliver page 1 first, leaving the converged update without it.
+        let page = earlier
+            .iter()
+            .chain(&ev)
+            .filter_map(|e| match e {
+                Event::LayoutUpdate { pages_changed, .. } => {
+                    pages_changed.iter().find(|p| p.page == 1)
+                }
+                _ => None,
+            })
+            .next_back()
+            .expect("page 1 in a layout update");
+        assert_owners(&page.dl);
         s.pause_background(true);
         let pos = SOURCE.find("=11 a").unwrap() + 4;
         let edit = s
