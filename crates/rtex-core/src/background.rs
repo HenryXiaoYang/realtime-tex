@@ -64,13 +64,52 @@ pub fn write_snapshot(
                 .with_extension("pdf")
         })
         .collect();
-    copy_tree(project, dir, 0, &built)?;
+    // the project is copied once into a folder every snapshot of this build shares, and each
+    // snapshot hard-links to it: a session keeps three snapshots (src, src-body-0, src-body-1),
+    // and three copies of a big folder filled users' disks (plugin issues #13, #15)
+    let shared = dir.with_file_name("src-shared");
+    {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::fs::create_dir_all(&shared)?;
+        copy_tree(project, &shared, 0, &built)?;
+        link_tree(&shared, dir)?;
+    }
     for (rel, text) in files {
         let p = dir.join(rel);
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        // may be a link into the shared copy, which writing through would change for every
+        // snapshot
+        let _ = std::fs::remove_file(&p);
         std::fs::write(&p, text)?;
+    }
+    Ok(())
+}
+
+/// Hard-link every file of `src` into `dst` (copying where the file system has no hard links),
+/// replacing a file of `dst` older than its counterpart in `src`.
+fn link_tree(src: &Path, dst: &Path) -> Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            link_tree(&path, &target)?;
+            continue;
+        }
+        // a link shares its modification time with `path`, so it is never older
+        if let Ok(t) = std::fs::metadata(&target) {
+            if t.modified()? >= entry.metadata()?.modified()? {
+                continue;
+            }
+            std::fs::remove_file(&target)?;
+        }
+        if std::fs::hard_link(&path, &target).is_err() {
+            std::fs::copy(&path, &target)?;
+        }
     }
     Ok(())
 }
@@ -921,6 +960,37 @@ mod tests {
         );
         // a second snapshot (files already present) is fine too
         write_snapshot(&project, &files, "main.tex", &dir.join("snap")).unwrap();
+    }
+
+    #[test]
+    fn snapshots_share_one_copy() {
+        let dir = std::env::temp_dir().join(format!("rtex-snap-shared-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let project = dir.join("project");
+        std::fs::create_dir_all(project.join("fig")).unwrap();
+        std::fs::write(project.join("main.tex"), "saved").unwrap();
+        std::fs::write(project.join("fig/a.png"), "v1").unwrap();
+        let a = BTreeMap::from([("main.tex".to_string(), "edit a".to_string())]);
+        let b = BTreeMap::from([("main.tex".to_string(), "edit b".to_string())]);
+        write_snapshot(&project, &a, "main.tex", &dir.join("src")).unwrap();
+        write_snapshot(&project, &b, "main.tex", &dir.join("src-body-0")).unwrap();
+        // each snapshot keeps its own sources; the shared copy keeps the project's
+        let read = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap();
+        assert_eq!(read("src/main.tex"), "edit a");
+        assert_eq!(read("src-body-0/main.tex"), "edit b");
+        assert_eq!(read("src-shared/main.tex"), "saved");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let ino = |p: &str| std::fs::metadata(dir.join(p)).unwrap().ino();
+            assert_eq!(ino("src/fig/a.png"), ino("src-body-0/fig/a.png"));
+        }
+        // a figure saved again reaches every snapshot
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(project.join("fig/a.png"), "v2").unwrap();
+        write_snapshot(&project, &a, "main.tex", &dir.join("src")).unwrap();
+        assert_eq!(read("src/fig/a.png"), "v2");
+        assert_eq!(read("src-body-0/fig/a.png"), "v2");
     }
 
     #[test]
