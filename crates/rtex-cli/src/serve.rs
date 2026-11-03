@@ -7,6 +7,14 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// Optional overrides for the session's live-compile and pass timeouts, in milliseconds.
+/// `None` keeps the `SessionConfig` default.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Timeouts {
+    pub compile_ms: Option<u64>,
+    pub pass_ms: Option<u64>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     project: PathBuf,
@@ -15,11 +23,18 @@ pub fn run(
     fast_budget_ms: u64,
     eligibility: &str,
     math_owner_attribute: Option<u16>,
+    timeouts: Timeouts,
     picture_cache: bool,
     debug_dir: Option<PathBuf>,
 ) -> Result<()> {
     let mut cfg = SessionConfig::new(project, main);
     cfg.fast_budget = std::time::Duration::from_millis(fast_budget_ms);
+    if let Some(ms) = timeouts.compile_ms {
+        cfg.compile_timeout = Duration::from_millis(ms);
+    }
+    if let Some(ms) = timeouts.pass_ms {
+        cfg.pass_timeout = Duration::from_millis(ms);
+    }
     cfg.picture_cache = picture_cache;
     cfg.math_owner_attribute = math_owner_attribute;
     if debug_dir.is_some() {

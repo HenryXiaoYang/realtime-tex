@@ -88,8 +88,8 @@ briefly. The live engine and the background passes run on their own threads.
 | `debounce` | `debounce_ms` | | 300 ms | quiet time before a background pass starts |
 | `max_passes` | `max_passes` | | 5 | passes per layout before giving up (`PassLimitReached`) |
 | `fast_budget` | `fast_budget_ms` | `--fast-budget-ms` | 50 ms | a unit slower than this three times in a row waits for the pass |
-| `compile_timeout` | `compile_timeout_ms` | | 5 s | a live compile that takes longer is killed and the engine restarted |
-| `pass_timeout` | `pass_timeout_ms` | | 5 min | a background or export lualatex run that takes longer is killed and the layout reports `Failed` |
+| `compile_timeout` | `compile_timeout_ms` | `--compile-timeout-ms` | 5 s | a live compile that takes longer is killed and the engine restarted |
+| `pass_timeout` | `pass_timeout_ms` | `--pass-timeout-ms` | 5 min | a background or export lualatex run that takes longer is killed and the layout reports `Failed` |
 | `eligibility` | `eligibility` | `--eligibility` | `probe` | `probe` verifies unknown commands by comparison; `allowlist` only allows known ones |
 | `math_owner_attribute` | `math_owner_attribute` | `--math-owner-attribute` | none / `null` | observe host ids on this one LuaTeX attribute (`0..65535`) |
 | `trusted_macros` | `trusted_macros` | | none | macros you vouch for, treated as allow-listed |
