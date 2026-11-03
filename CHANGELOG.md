@@ -9,6 +9,10 @@
   and math-field boxes in `math_owners` display-list metadata (binary record `0x29`). Truly
   empty fields get zero-size anchors without changing nonempty fields or PDF output. Off
   by default.
+- `rtex serve --compile-timeout-ms` and `--pass-timeout-ms` set the live-compile and
+  background/export pass timeouts that the Rust and C/JSON configurations already take
+  (`compile_timeout`, `pass_timeout`). A host that drives `rtex serve` could not shorten the
+  five-minute pass timeout before. Defaults are unchanged.
 
 ### Fixed
 

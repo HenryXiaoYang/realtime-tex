@@ -104,6 +104,14 @@ enum Cmd {
         /// Observe host math ids carried by this LuaTeX attribute.
         #[arg(long)]
         math_owner_attribute: Option<u16>,
+        /// Kill a live compile that takes longer than this many milliseconds and restart the
+        /// engine (default 5000).
+        #[arg(long)]
+        compile_timeout_ms: Option<u64>,
+        /// Kill a background or export pass that takes longer than this many milliseconds; its
+        /// layout reports `Failed` (default 300000, five minutes).
+        #[arg(long)]
+        pass_timeout_ms: Option<u64>,
         /// Draw every picture environment on every background pass instead of reusing the
         /// unchanged ones from an earlier pass's PDF.
         #[arg(long)]
@@ -271,6 +279,8 @@ fn main() -> anyhow::Result<()> {
             fast_budget_ms,
             eligibility,
             math_owner_attribute,
+            compile_timeout_ms,
+            pass_timeout_ms,
             no_picture_cache,
             debug_dir,
         } => serve::run(
@@ -280,6 +290,10 @@ fn main() -> anyhow::Result<()> {
             fast_budget_ms,
             &eligibility,
             math_owner_attribute,
+            serve::Timeouts {
+                compile_ms: compile_timeout_ms,
+                pass_ms: pass_timeout_ms,
+            },
             !no_picture_cache,
             debug_dir,
         )?,
@@ -422,4 +436,36 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn serve_args(extra: &[&str]) -> (Option<u64>, Option<u64>) {
+        let mut argv = vec!["rtex", "serve", "--project", "p"];
+        argv.extend_from_slice(extra);
+        match Cli::try_parse_from(argv)
+            .expect("serve arguments parse")
+            .cmd
+        {
+            Cmd::Serve {
+                compile_timeout_ms,
+                pass_timeout_ms,
+                ..
+            } => (compile_timeout_ms, pass_timeout_ms),
+            _ => panic!("expected the serve subcommand"),
+        }
+    }
+
+    #[test]
+    fn serve_timeouts_default_to_the_session_config() {
+        assert_eq!(serve_args(&[]), (None, None));
+    }
+
+    #[test]
+    fn serve_accepts_both_timeouts_in_milliseconds() {
+        let parsed = serve_args(&["--compile-timeout-ms", "2000", "--pass-timeout-ms", "8000"]);
+        assert_eq!(parsed, (Some(2000), Some(8000)));
+    }
 }
