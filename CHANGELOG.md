@@ -12,10 +12,14 @@
 
 ### Fixed
 
-- The build directory holds one copy of the project instead of three: the snapshot every
-  pass reads (`src`, `src-body-0`, `src-body-1`) hard-links to a shared copy (`src-shared`)
-  and only the edited sources are its own. A main file in a big folder filled the disk
-  three times over (plugin issues #13, #15).
+- The build directory no longer copies the main file's folder. Each snapshot a pass reads
+  (`src`, `src-body-0`, `src-body-1`) holds only the edited sources, in real folders, and links
+  everything else: a folder without sources is one link to the project's folder, a file next to
+  a source a link to the project's file. On Windows without Developer Mode, folders become
+  junctions and files hard links, or copies up to 8 MiB (a bigger file is still found through
+  `\input@path` and the graphics path). Three copies of a big folder filled users' disks, and
+  every pass walked all of it (plugin issues #13, #15). A snapshot from an earlier version is
+  replaced on the first pass.
 - Empty unicode-math radical degrees now report a zero-size `degree` ownership point,
   derived from the converted radical and its MATH parameters without changing PDF output.
 
