@@ -12,6 +12,10 @@
 
 ### Fixed
 
+- The build directory holds one copy of the project instead of three: the snapshot every
+  pass reads (`src`, `src-body-0`, `src-body-1`) hard-links to a shared copy (`src-shared`)
+  and only the edited sources are its own. A main file in a big folder filled the disk
+  three times over (plugin issues #13, #15).
 - Empty unicode-math radical degrees now report a zero-size `degree` ownership point,
   derived from the converted radical and its MATH parameters without changing PDF output.
 
