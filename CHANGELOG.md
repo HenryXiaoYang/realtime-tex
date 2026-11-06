@@ -46,6 +46,9 @@
   result: about 0.04–0.07 ms of the fixed cost of an update (`rtex probe`, one-line
   paragraph). The FIFO is given room for 1 MB, so the server still finishes writing a large
   result while the host is not reading. macOS and Windows keep the reader thread.
+- A keystroke updates a file's span and line tables in place instead of rebuilding them:
+  on the 300-page book (one 880 KB file), applying an edit takes about 0.02 ms less (0.075
+  → 0.055 ms in a running session). What is left is mostly moving the text after the edit.
 
 ## 0.0.6 (2026-11-01)
 

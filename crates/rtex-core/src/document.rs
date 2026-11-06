@@ -860,20 +860,21 @@ impl FileBuf {
         // insert the newlines of the inserted text
         let first_after = self.line_starts.partition_point(|&p| p <= start);
         let last_removed = self.line_starts.partition_point(|&p| p <= end);
-        let mut inserted: Vec<usize> = edit
+        let inserted: Vec<usize> = edit
             .text
             .bytes()
             .enumerate()
             .filter(|(_, b)| *b == b'\n')
             .map(|(i, _)| start + i + 1)
             .collect();
-        let tail: Vec<usize> = self.line_starts[last_removed..]
-            .iter()
-            .map(|&p| (p as i64 + delta) as usize)
-            .collect();
-        self.line_starts.truncate(first_after);
-        self.line_starts.append(&mut inserted);
-        self.line_starts.extend(tail);
+        let shifted_from = first_after + inserted.len();
+        // in place: a keystroke without a newline moves no entry, it only shifts the tail
+        self.line_starts.splice(first_after..last_removed, inserted);
+        if delta != 0 {
+            for p in &mut self.line_starts[shifted_from..] {
+                *p = (*p as i64 + delta) as usize;
+            }
+        }
         debug_assert_eq!(self.line_starts, compute_line_starts(&self.text));
         // Windowed re-segmentation: body spans are delimited by blank lines (environments are kept
         // whole), so re-segmenting from the start of the span before the edit to the end of the
@@ -918,77 +919,94 @@ impl FileBuf {
             }
             _ => None,
         };
-        let new_units: Vec<(Range<usize>, SpanKind)> = if let Some((lo, hi)) = window {
-            let lo_is_preamble = old_spans[lo].kind == SpanKind::Preamble;
-            let hi_is_trailer = old_spans[hi].kind == SpanKind::Trailer;
-            let win_start = if lo_is_preamble {
-                old_spans[lo].range.end
-            } else {
-                old_spans[lo].range.start
-            };
-            let win_end = (if hi_is_trailer {
-                old_spans[hi].range.start
-            } else {
-                old_spans[hi].range.end
-            } as i64
-                + delta) as usize;
-            let keep_prefix = if lo_is_preamble { lo + 1 } else { lo };
-            let mut units: Vec<(Range<usize>, SpanKind)> = old_spans[..keep_prefix]
-                .iter()
-                .map(|sp| (sp.range.clone(), sp.kind))
-                .collect();
-            if segment_body(&self.text, win_start, win_end, &mut units, &self.rules) {
-                let tail_from = if hi_is_trailer { hi } else { hi + 1 };
-                for sp in &old_spans[tail_from..] {
-                    units.push((
-                        (sp.range.start as i64 + delta) as usize
-                            ..(sp.range.end as i64 + delta) as usize,
-                        sp.kind,
-                    ));
+        // The new units are the old spans before the window (`head` of them), the window's
+        // own units (`mid`) and the old spans from `tail_from` on, shifted by the edit; a full
+        // pass is all `mid`. Only the window is materialized and the span table is updated in
+        // place: a keystroke in a long file copies no table.
+        let full = || (0, segment(&self.text, &self.rules), old_spans.len());
+        let (mut head, mut mid, mut tail_from) = match window {
+            Some((lo, hi)) => {
+                let lo_is_preamble = old_spans[lo].kind == SpanKind::Preamble;
+                let hi_is_trailer = old_spans[hi].kind == SpanKind::Trailer;
+                let win_start = if lo_is_preamble {
+                    old_spans[lo].range.end
+                } else {
+                    old_spans[lo].range.start
+                };
+                let win_end = (if hi_is_trailer {
+                    old_spans[hi].range.start
+                } else {
+                    old_spans[hi].range.end
+                } as i64
+                    + delta) as usize;
+                let keep_prefix = if lo_is_preamble { lo + 1 } else { lo };
+                let mut units = Vec::new();
+                if segment_body(&self.text, win_start, win_end, &mut units, &self.rules) {
+                    (keep_prefix, units, if hi_is_trailer { hi } else { hi + 1 })
+                } else {
+                    full()
                 }
-                units
-            } else {
-                segment(&self.text, &self.rules)
             }
-        } else {
-            segment(&self.text, &self.rules)
+            None => full(),
+        };
+        let old_len = old_spans.len();
+        let new_len = head + mid.len() + (old_len - tail_from);
+        let shift =
+            |r: &Range<usize>| (r.start as i64 + delta) as usize..(r.end as i64 + delta) as usize;
+        let unit = |i: usize, head: usize, mid: &[(Range<usize>, SpanKind)], tail_from: usize| {
+            if i < head {
+                (old_spans[i].range.clone(), old_spans[i].kind)
+            } else if i < head + mid.len() {
+                mid[i - head].clone()
+            } else {
+                let o = &old_spans[i - head - mid.len() + tail_from];
+                (shift(&o.range), o.kind)
+            }
         };
         // old spans before the edit whose range came out unchanged are unchanged (a span that
         // merely borders the edit, like the preamble when typing at the top of the first
         // paragraph, is unchanged too when its range is)
         let mut prefix = 0;
-        while prefix < old_spans.len()
-            && prefix < new_units.len()
+        while prefix < old_len
+            && prefix < new_len
             && old_spans[prefix].range.end <= start
-            && old_spans[prefix].range == new_units[prefix].0
+            && old_spans[prefix].range == unit(prefix, head, &mid, tail_from).0
         {
             prefix += 1;
         }
         // old spans entirely after the edit, matched from the end with the byte delta applied
         let mut suffix = 0;
-        while suffix < old_spans.len() - prefix && suffix < new_units.len() - prefix {
-            let o = &old_spans[old_spans.len() - 1 - suffix];
-            let n = &new_units[new_units.len() - 1 - suffix];
-            let shifted =
-                (o.range.start as i64 + delta) as usize..(o.range.end as i64 + delta) as usize;
-            if o.range.start >= end && n.0 == shifted {
+        while suffix < old_len - prefix && suffix < new_len - prefix {
+            let o = &old_spans[old_len - 1 - suffix];
+            let n = unit(new_len - 1 - suffix, head, &mid, tail_from);
+            if o.range.start >= end && n.0 == shift(&o.range) {
                 suffix += 1;
             } else {
                 break;
             }
         }
+        if prefix < head {
+            // not expected: the window starts before the edit, so its head is matched prefix.
+            // The in-place update below takes a matched suffix's new range from `mid` or from
+            // the span itself, never from the head; without that guarantee, use only `mid`.
+            mid = (0..new_len)
+                .map(|i| unit(i, head, &mid, tail_from))
+                .collect();
+            (head, tail_from) = (0, old_len);
+        }
         let mut outcome = EditOutcome::default();
-        let mut spans = Vec::with_capacity(new_units.len());
-        spans.extend(old_spans[..prefix].iter().cloned());
-        let old_mid = &old_spans[prefix..old_spans.len() - suffix];
-        let new_mid = &new_units[prefix..new_units.len() - suffix];
+        let mut mid_spans = Vec::new();
+        let old_mid = &old_spans[prefix..old_len - suffix];
+        let new_mid: Vec<(Range<usize>, SpanKind)> = (prefix..new_len - suffix)
+            .map(|i| unit(i, head, &mid, tail_from))
+            .collect();
         if old_mid.len() == 1 && new_mid.len() == 1 {
             let o = &old_mid[0];
             let (range, kind) = new_mid[0].clone();
             let hash = hash_str(&self.text[range.clone()]);
             outcome.preamble_changed |= o.kind == SpanKind::Preamble || kind == SpanKind::Preamble;
             outcome.touched.push(o.id);
-            spans.push(Span {
+            mid_spans.push(Span {
                 id: o.id,
                 range,
                 kind,
@@ -1031,7 +1049,7 @@ impl FileBuf {
                     }
                 };
                 outcome.preamble_changed |= *kind == SpanKind::Preamble;
-                spans.push(Span {
+                mid_spans.push(Span {
                     id,
                     range: range.clone(),
                     kind: *kind,
@@ -1040,17 +1058,19 @@ impl FileBuf {
                 });
             }
         }
+        // the matched prefix stays as it is; the matched suffix keeps ids, hashes and revisions
+        // with the new ranges and kinds
+        let mut spans = old_spans;
         for k in 0..suffix {
-            let o = &old_spans[old_spans.len() - suffix + k];
-            let (range, kind) = new_units[new_units.len() - suffix + k].clone();
-            spans.push(Span {
-                id: o.id,
-                range,
-                kind,
-                hash: o.hash,
-                last_revision: o.last_revision,
-            });
+            let (i, j) = (old_len - suffix + k, new_len - suffix + k);
+            let sp = &mut spans[i];
+            if j >= head + mid.len() {
+                sp.range = shift(&sp.range);
+            } else {
+                (sp.range, sp.kind) = mid[j - head].clone();
+            }
         }
+        spans.splice(prefix..old_len - suffix, mid_spans);
         self.spans = spans;
         outcome
     }
