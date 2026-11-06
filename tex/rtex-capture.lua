@@ -108,22 +108,33 @@ local function scan_definitions(path, seen, depth)
   for name in text:gmatch("\\[gex]?def%s*\\(%a+)") do seen[name] = true end
   for name in text:gmatch("\\let%s*\\(%a+)") do seen[name] = true end
   for name in text:gmatch("\\setlength%s*\\(%a+)") do seen[name] = true end
+  -- the patterns below are slow on a long body (100 ms on 300 pages): each runs only when
+  -- its command occurs at all
+  local has = function(cmd) return text:find(cmd, 1, true) end
   for _, cmd in ipairs({ "newglossaryentry", "longnewglossaryentry", "newacronym", "newabbreviation" }) do
-    for label in text:gmatch("\\" .. cmd .. "%s*{([%w@:%-_.]+)}") do gls_labels[label] = true end
-    for label in text:gmatch("\\" .. cmd .. "%s*%b[]%s*{([%w@:%-_.]+)}") do gls_labels[label] = true end
+    if has("\\" .. cmd) then
+      for label in text:gmatch("\\" .. cmd .. "%s*{([%w@:%-_.]+)}") do gls_labels[label] = true end
+      for label in text:gmatch("\\" .. cmd .. "%s*%b[]%s*{([%w@:%-_.]+)}") do gls_labels[label] = true end
+    end
   end
-  for _, pat in ipairs({ "\\loadglsentries%s*{([^}]*)}", "\\loadglsentries%s*%b[]%s*{([^}]*)}" }) do
-    for sub in text:gmatch(pat) do
+  if has("\\loadglsentries") then
+    for _, pat in ipairs({ "\\loadglsentries%s*{([^}]*)}", "\\loadglsentries%s*%b[]%s*{([^}]*)}" }) do
+      for sub in text:gmatch(pat) do
+        local sp = sub:match("%.tex$") and sub or (sub .. ".tex")
+        scan_definitions(sp, seen, depth + 1)
+      end
+    end
+  end
+  if has("\\input") then
+    for sub in text:gmatch("\\input%s*{([^}]*)}") do
       local sp = sub:match("%.tex$") and sub or (sub .. ".tex")
       scan_definitions(sp, seen, depth + 1)
     end
   end
-  for sub in text:gmatch("\\input%s*{([^}]*)}") do
-    local sp = sub:match("%.tex$") and sub or (sub .. ".tex")
-    scan_definitions(sp, seen, depth + 1)
-  end
-  for sub in text:gmatch("\\include%s*{([^}]*)}") do
-    scan_definitions(sub .. ".tex", seen, depth + 1)
+  if has("\\include") then
+    for sub in text:gmatch("\\include%s*{([^}]*)}") do
+      scan_definitions(sub .. ".tex", seen, depth + 1)
+    end
   end
 end
 local function macro_delta()
@@ -400,17 +411,18 @@ function C.afterheading()
   if cur and cur.kind == "heading" then unit_close() end
 end
 
+local GLYPH, WHATSIT, WHATSITS = node.id("glyph"), node.id("whatsit"), node.whatsits()
+local FLAGGED = {}
+for _, name in ipairs({ "ins", "mark", "adjust", "dir", "hlist", "vlist", "rule", "math" }) do FLAGGED[node.id(name)] = name end
 local function scan_flags(head)
   local flags, glyphs = {}, 0
-  for n in node.traverse(head) do
-    local t = n.id
-    if t == node.id("glyph") then glyphs = glyphs + 1
-    elseif t == node.id("whatsit") then
-      local st = node.whatsits()[n.subtype] or tostring(n.subtype)
+  for _, t, sub in node.direct.traverse(node.direct.todirect(head)) do
+    if t == GLYPH then glyphs = glyphs + 1
+    elseif t == WHATSIT then
+      local st = WHATSITS[sub] or tostring(sub)
       flags["whatsit_" .. st] = (flags["whatsit_" .. st] or 0) + 1
-    elseif t == node.id("ins") or t == node.id("mark") or t == node.id("adjust") or t == node.id("dir")
-        or t == node.id("hlist") or t == node.id("vlist") or t == node.id("rule") or t == node.id("math") then
-      local name = node.type(t)
+    elseif FLAGGED[t] then
+      local name = FLAGGED[t]
       flags[name] = (flags[name] or 0) + 1
     end
   end
