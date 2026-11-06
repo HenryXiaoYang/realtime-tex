@@ -16,6 +16,11 @@
 
 ### Fixed
 
+- `rtex serve` settles on documents whose `\maketitle` makes a title page of its own (the
+  report and book classes, `article[titlepage]`). The engine warm-up compiled the
+  `\maketitle` unit, which redefines `\maketitle`; that leak restarted the engine and ran a
+  pass, and the pass's layout warmed the same unit again, so the engine restarted about every
+  0.4 s forever. The warm-up now skips units whose compile leaked.
 - The build directory no longer copies the main file's folder. Each snapshot a pass reads
   (`src`, `src-body-0`, `src-body-1`) holds only the edited sources, in real folders, and links
   everything else: a folder without sources is one link to the project's folder, a file next to

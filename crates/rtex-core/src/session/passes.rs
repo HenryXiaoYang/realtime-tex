@@ -706,8 +706,17 @@ pub(super) fn deliver_layout(
         )
     };
     // warm the engine: compile the first allow-listed paragraph once so fonts are loaded before
-    // the first real keystroke (never an unprobed unit: it could leak state)
-    if let Some(id) = eligible_strict.first().copied() {
+    // the first real keystroke (never an unprobed unit: it could leak state). Skip a unit whose
+    // compile already leaked (\maketitle in title-page mode redefines \maketitle): warming it
+    // again restarts the engine and schedules a pass, whose layout would warm it again, forever.
+    let warm_id = {
+        let live = s.live.lock();
+        eligible_strict
+            .iter()
+            .copied()
+            .find(|id| live.get(*id).is_none_or(|u| u.leak.is_none()))
+    };
+    if let Some(id) = warm_id {
         let files = s.files.lock();
         let layout = s.layout.lock();
         if let (Some(eu), Some(text)) = (
