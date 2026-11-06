@@ -128,7 +128,37 @@ pub fn hash_str(s: &str) -> u64 {
     h.finish()
 }
 
-/// `\input{…}`, `\include{…}` and `\subfile{…}` commands in `text` (outside comments), as
+/// The edit that turns `old` into `new`: the bytes between their common prefix and common
+/// suffix, on character boundaries. None when they are equal.
+pub fn diff_edit(old: &str, new: &str) -> Option<Edit> {
+    if old == new {
+        return None;
+    }
+    let (a, b) = (old.as_bytes(), new.as_bytes());
+    let mut start = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    while !old.is_char_boundary(start) {
+        start -= 1;
+    }
+    let max = a.len().min(b.len()) - start;
+    let mut suffix = a
+        .iter()
+        .rev()
+        .zip(b.iter().rev())
+        .take(max)
+        .take_while(|(x, y)| x == y)
+        .count();
+    // the same bytes follow in both, so a boundary in one is a boundary in the other
+    while !old.is_char_boundary(a.len() - suffix) {
+        suffix -= 1;
+    }
+    Some(Edit {
+        start_byte: start,
+        end_byte: a.len() - suffix,
+        text: new[start..b.len() - suffix].to_string(),
+    })
+}
+
+/// `\input{…}`,`\include{…}` and `\subfile{…}` commands in `text` (outside comments), as
 /// (byte range of the command, project-relative target with a `.tex` extension). Absolute
 /// paths, `..`, and names built from macros are skipped.
 pub(crate) fn find_inputs(text: &str) -> Vec<(Range<usize>, String, &'static str)> {
@@ -1195,6 +1225,26 @@ mod tests {
                 .collect()
         };
         assert_eq!(shape(&lf), shape(&crlf));
+    }
+
+    #[test]
+    fn diff_edit_is_minimal_and_on_char_boundaries() {
+        assert!(diff_edit("abc", "abc").is_none());
+        for (old, new, range, text) in [
+            ("abc", "abXc", 2..2, "X"),
+            ("abc", "ac", 1..2, ""),
+            ("aaa", "aaaa", 3..3, "a"),
+            ("aé", "aè", 1..3, "è"),
+            ("éa", "èa", 0..2, "è"),
+            ("", "x", 0..0, "x"),
+            ("x", "", 0..1, ""),
+        ] {
+            let e = diff_edit(old, new).unwrap();
+            assert_eq!((e.start_byte..e.end_byte, e.text.as_str()), (range, text));
+            let mut s = old.to_string();
+            s.replace_range(e.start_byte..e.end_byte, &e.text);
+            assert_eq!(s, new);
+        }
     }
 
     #[test]

@@ -141,6 +141,56 @@ fn fast_path_edit_produces_paragraph_update_with_fragments() {
     s.close();
 }
 
+/// A host that sends its whole buffer (set_document) keeps the spans, the layout's contexts
+/// and the engine: only the bytes that differ are an edit.
+#[test]
+fn set_document_applies_only_what_differs() {
+    let Some((s, _p)) = open("setdoc") else {
+        return;
+    };
+    let Event::LayoutUpdate {
+        eligible_paragraphs,
+        ..
+    } = wait_layout(&s)
+    else {
+        unreachable!()
+    };
+    let doc = s.document_text("main.tex").unwrap();
+    let spans = s.spans("main.tex");
+    let generation = s.versions().engine_generation;
+    let r = s.set_document("main.tex", &doc).unwrap();
+    assert_eq!(
+        (r.routed.as_str(), r.reasons.clone()),
+        ("background", vec!["unchanged".to_string()])
+    );
+    let body = spans
+        .iter()
+        .find(|sp| eligible_paragraphs.contains(&sp.id))
+        .unwrap();
+    let pos = body.range.start + doc[body.range.clone()].find(' ').unwrap();
+    let mut edited = doc.clone();
+    edited.insert_str(pos, " inserted");
+    let r = s.set_document("main.tex", &edited).unwrap();
+    assert_eq!(r.routed, "fast", "{:?}", r.reasons);
+    assert_eq!(r.outcome.touched, vec![body.id]);
+    let (ev, _) = wait(&s, 60, |e| matches!(e, Event::ParagraphUpdate { .. }));
+    assert!(
+        matches!(ev, Some(Event::ParagraphUpdate { par_id, ref status, .. }) if par_id == body.id && status == "ok"),
+        "{ev:?}"
+    );
+    assert_eq!(
+        s.versions().engine_generation,
+        generation,
+        "the engine restarted"
+    );
+    let after = s.spans("main.tex");
+    assert_eq!(
+        after.iter().map(|sp| sp.id).collect::<Vec<_>>(),
+        spans.iter().map(|sp| sp.id).collect::<Vec<_>>()
+    );
+    s.close();
+}
+
 #[test]
 fn ineligible_edit_goes_to_background_and_reconverges() {
     let Some((s, _p)) = open("bg") else { return };

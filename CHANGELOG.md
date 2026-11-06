@@ -31,6 +31,13 @@
   replaced on the first pass.
 - Empty unicode-math radical degrees now report a zero-size `degree` ownership point,
   derived from the converted radical and its MATH parameters without changing PDF output.
+- `set_document` applies only the bytes that differ from the text the session holds. It
+  replaced the whole file, which counted as a preamble edit: the live engine restarted, every
+  unit got a new id, and the first layout no longer had contexts for them. A host that sent
+  its buffer 0.3 s after opening got its first live update after the second layout (24.2 s
+  on the 300-page book, 3.1 s on the 10-page one); now after the first (8.1 s, 1.4 s). The
+  text the session already holds changes nothing (`routed` is `"background"`, reason
+  `unchanged`).
 
 ### Faster
 
