@@ -1,59 +1,99 @@
 -- rtex-json.lua: minimal JSON encoder/decoder (Lua 5.3, LuaTeX). No external deps.
 local M = {}
 
+local type, mtype, fmt, tostring, tonumber, next = type, math.type, string.format, tostring, tonumber, next
+local find, gsub, sort, concat, huge = string.find, string.gsub, table.sort, table.concat, math.huge
+
 local escapes = { ['"'] = '\\"', ['\\'] = '\\\\', ['\b'] = '\\b', ['\f'] = '\\f',
                   ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t' }
 local function esc(s)
-  return (s:gsub('[%c"\\]', function(c) return escapes[c] or string.format('\\u%04x', c:byte()) end))
+  if not find(s, '[%c"\\]') then return s end
+  return (gsub(s, '[%c"\\]', function(c) return escapes[c] or fmt('\\u%04x', c:byte()) end))
 end
 
 local function is_array(t)
   local n = #t
   if n == 0 then return next(t) == nil end
-  for k in pairs(t) do
-    if math.type(k) ~= "integer" or k < 1 or k > n then return false end
+  for k in next, t do
+    if mtype(k) ~= "integer" or k < 1 or k > n then return false end
   end
   return true
 end
 
-local encode
-local function encode_value(v, out)
+-- integers go into the buffer as they are: table.concat writes them as "%d" does
+local function num(v)
+  if mtype(v) == "integer" then return v end
+  if v ~= v or v == huge or v == -huge then return "null" end
+  return fmt("%.17g", v)
+end
+
+-- `x` as the integer `num` would print it as ("%d", or "%.17g" of a whole float), else nil
+local tointeger = math.tointeger
+local function as_int(x)
+  local i = tointeger(x)
+  if i and i == x and i < 1e15 and i > -1e15 and (i ~= 0 or 1 / x > 0) then return i end
+end
+
+-- The output goes to `buf` (pieces 1..nb): page display lists have hundreds of thousands of
+-- pieces, and `#buf` per append costs a binary search each time.
+local buf, nb
+local function encode_value(v)
   local tv = type(v)
-  if tv == "nil" then out[#out + 1] = "null"
-  elseif tv == "boolean" then out[#out + 1] = v and "true" or "false"
-  elseif tv == "number" then
-    if math.type(v) == "integer" then out[#out + 1] = string.format("%d", v)
-    elseif v ~= v or v == math.huge or v == -math.huge then out[#out + 1] = "null"
-    else out[#out + 1] = string.format("%.17g", v) end
-  elseif tv == "string" then out[#out + 1] = '"' .. esc(v) .. '"'
+  if tv == "number" then nb = nb + 1; buf[nb] = num(v)
+  elseif tv == "string" then nb = nb + 1; buf[nb] = '"' .. esc(v) .. '"'
   elseif tv == "table" then
     if is_array(v) then
-      out[#out + 1] = "["
-      for i = 1, #v do
-        if i > 1 then out[#out + 1] = "," end
-        encode_value(v[i], out)
+      local n = #v
+      if n == 8 and v[1] == "g" then
+        -- a glyph item of a display list (most of a page): one format call
+        local f, c, x, y, w, ef = as_int(v[2]), as_int(v[3]), as_int(v[5]), as_int(v[6]), as_int(v[7]), as_int(v[8])
+        if f and c and x and y and w and ef then
+          local gi = v[4]
+          if gi == nil then -- TFM fonts
+            nb = nb + 1; buf[nb] = fmt('["g",%d,%d,null,%d,%d,%d,%d]', f, c, x, y, w, ef)
+            return
+          end
+          gi = as_int(gi)
+          if gi then
+            nb = nb + 1; buf[nb] = fmt('["g",%d,%d,%d,%d,%d,%d,%d]', f, c, gi, x, y, w, ef)
+            return
+          end
+        end
       end
-      out[#out + 1] = "]"
+      nb = nb + 1; buf[nb] = "["
+      for i = 1, n do
+        if i > 1 then nb = nb + 1; buf[nb] = "," end
+        -- display-list items are flat arrays of numbers and strings: no call per element
+        local x = v[i]
+        local tx = type(x)
+        if tx == "number" then nb = nb + 1; buf[nb] = num(x)
+        elseif tx == "string" then nb = nb + 1; buf[nb] = '"' .. esc(x) .. '"'
+        else encode_value(x) end
+      end
+      nb = nb + 1; buf[nb] = "]"
     else
-      out[#out + 1] = "{"
-      local keys = {}
-      for k in pairs(v) do keys[#keys + 1] = tostring(k) end
-      table.sort(keys)
-      for i, k in ipairs(keys) do
-        if i > 1 then out[#out + 1] = "," end
-        out[#out + 1] = '"' .. esc(k) .. '":'
-        encode_value(v[k] == nil and v[tonumber(k)] or v[k], out)
+      nb = nb + 1; buf[nb] = "{"
+      local keys, nk = {}, 0
+      for k in next, v do nk = nk + 1; keys[nk] = tostring(k) end
+      sort(keys)
+      for i = 1, nk do
+        local k = keys[i]
+        nb = nb + 1; buf[nb] = (i > 1 and ',"' or '"') .. esc(k) .. '":'
+        encode_value(v[k] == nil and v[tonumber(k)] or v[k])
       end
-      out[#out + 1] = "}"
+      nb = nb + 1; buf[nb] = "}"
     end
-  else
-    out[#out + 1] = '"' .. esc(tostring(v)) .. '"'
-  end
+  elseif tv == "nil" then nb = nb + 1; buf[nb] = "null"
+  elseif tv == "boolean" then nb = nb + 1; buf[nb] = v and "true" or "false"
+  else nb = nb + 1; buf[nb] = '"' .. esc(tostring(v)) .. '"' end
 end
 function M.encode(v)
-  local out = {}
-  encode_value(v, out)
-  return table.concat(out)
+  local outer, outer_n = buf, nb -- reentrant (a __tostring calling encode)
+  buf, nb = {}, 0
+  encode_value(v)
+  local s = concat(buf, "", 1, nb)
+  buf, nb = outer, outer_n
+  return s
 end
 
 -- Decoder -------------------------------------------------------------------

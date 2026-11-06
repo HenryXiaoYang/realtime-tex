@@ -14,6 +14,15 @@ check("json roundtrip scalars", back.a == 1 and back.c == v.c and back.d == true
 check("json roundtrip arrays", #back.b == 3 and back.b[3] == 3)
 check("json decode unicode escape", json.decode('"\\u00e9\\ud83d\\ude00"') == "é😀")
 check("json decode nested", json.decode('{"x":[{"y":null},{"y":-3e2}]}').x[2].y == -300)
+-- glyph items take a one-format fast path: it must print exactly what the general path does
+-- (whole floats as integers, -0.0 and fractions as "%.17g", a nil index as null)
+check("json glyph fast path", json.encode({
+  { "g", 16, 101, nil, 6636830.0, 9118927, 319903.0, 3000 }, { "g", 1, 2, 3, 4, 5, 6, 7 },
+  { "g", 1, 2, nil, -0.0, 5, 6, 7 }, { "g", 1, 2, nil, 4, 5.5, 6, 7 }, { "g", 1, "2", nil, 4, 5, 6, 7 },
+}) == '[["g",16,101,null,6636830,9118927,319903,3000],["g",1,2,3,4,5,6,7],'
+  .. '["g",1,2,null,-0,5,6,7],["g",1,2,null,4,5.5,6,7],["g",1,"2",null,4,5,6,7]]')
+check("json object keys sorted, escapes", json.encode({ b = 'x"\n', a = { 1.5, true, "\1" } })
+  == '{"a":[1.5,true,"\\u0001"],"b":"x\\"\\n"}')
 
 -- The table encoder (page path) must carry the same optional record as the direct
 -- paragraph encoder. Scan framed records, rather than matching a byte inside a payload,
