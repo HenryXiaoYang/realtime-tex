@@ -341,24 +341,38 @@ impl LayoutStore {
                 }
             }
         }
-        let mut changed = Vec::new();
-        let mut new_pages = BTreeMap::new();
-        let mut new_hashes = BTreeMap::new();
+        // a page whose capture text is unchanged keeps its parsed list (after an edit most
+        // pages are): read and hash every page, parse only the others
+        let mut fresh = Vec::new();
         for n in 1..=cap.json.pages {
-            let dl = cap.page(n)?;
-            let h = crate::document::hash_str(&serde_json::to_string(&dl)?);
-            if self.page_hashes.get(&n) != Some(&h) {
-                changed.push(n);
-            }
+            let text = cap.page_json(n)?;
+            let h = crate::document::hash_str(&text);
+            let dl = if self.page_hashes.get(&n) == Some(&h) && self.pages.contains_key(&n) {
+                None
+            } else {
+                Some(DisplayList::from_json(&text)?)
+            };
+            fresh.push((n, h, dl));
+        }
+        let mut old_pages = std::mem::take(&mut self.pages);
+        let mut changed = Vec::new();
+        let mut new_hashes = BTreeMap::new();
+        for (n, h, dl) in fresh {
+            let dl = match dl {
+                Some(dl) => {
+                    changed.push(n);
+                    dl
+                }
+                None => old_pages.remove(&n).expect("checked above"),
+            };
             new_hashes.insert(n, h);
-            new_pages.insert(n, dl);
+            self.pages.insert(n, dl);
         }
         for old in self.page_hashes.keys() {
             if !new_hashes.contains_key(old) {
                 changed.push(*old);
             }
         }
-        self.pages = new_pages;
         self.page_hashes = new_hashes;
         self.snapshot_index = snapshot
             .iter()
@@ -815,5 +829,46 @@ mod placement_tests {
         assert!(!s.fragments_on_page(&[frag(1, vec![h / 2, h + 1])]));
         // a page whose height is unknown is not checked (no false drop)
         assert!(s.fragments_on_page(&[frag(9, vec![-100])]));
+    }
+}
+
+#[cfg(test)]
+mod install_tests {
+    use super::*;
+
+    #[test]
+    fn unchanged_pages_keep_their_list() {
+        let dir = std::env::temp_dir().join(format!("rtex-install-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let page = |n: i64, h: i64| {
+            let json = format!(r#"{{"kind":"page","page":{n},"page_height":{h},"lines":[]}}"#);
+            std::fs::write(dir.join(format!("main.rtex-page{n}.json")), json).unwrap();
+        };
+        let cap = |pages: i64| CaptureResult {
+            out_dir: dir.clone(),
+            jobname: "main".into(),
+            json: crate::capture::CaptureJson {
+                pages,
+                ..Default::default()
+            },
+            pdf: dir.join("main.pdf"),
+            log: dir.join("main.log"),
+            wall: std::time::Duration::ZERO,
+            exit_ok: true,
+        };
+        let mut s = LayoutStore::default();
+        page(1, 100);
+        page(2, 200);
+        assert_eq!(s.install(&cap(2), vec![], 1).unwrap(), vec![1, 2]);
+        // page 1 is unchanged and keeps its list (the marker shows it was not parsed again)
+        s.pages.get_mut(&1).unwrap().depth = 7;
+        page(2, 250);
+        assert_eq!(s.install(&cap(2), vec![], 2).unwrap(), vec![2]);
+        assert_eq!(s.pages[&1].depth, 7);
+        assert_eq!(s.page_height(2), Some(250));
+        // a page that went away is reported changed
+        assert_eq!(s.install(&cap(1), vec![], 3).unwrap(), vec![2]);
+        assert_eq!(s.pages.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
