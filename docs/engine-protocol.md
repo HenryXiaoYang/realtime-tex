@@ -56,11 +56,18 @@ in binary mode (`io.open(path, "rb")`) and then the response pipe. Stdin is not 
 is in text mode on Windows: CR LF in a source would become LF, which breaks the byte counts,
 and Ctrl-Z would end the input.
 
-On both platforms, a reader thread on the host drains the response channel with blocking reads
-and passes whole frames to the engine thread over a queue. Nothing polls. On macOS, `poll` did
-not report a frame that arrived while it waited, and a FIFO there holds less than a large
+On macOS and Windows, a reader thread on the host drains the response channel with blocking
+reads and passes whole frames to the engine thread over a queue. Nothing polls. On macOS, `poll`
+did not report a frame that arrived while it waited, and a FIFO there holds less than a large
 display list. The server blocked on its write while the host waited out the watchdog. Draining
 continuously means the server can always finish writing.
+
+On Linux, `poll` does report a FIFO that becomes readable while it waits, so the thread waiting
+for a reply reads the FIFO itself, without blocking, and polls when nothing has arrived. Every
+frame is the reply to a request, and the host reads whenever it waits for one. The host also
+sets the FIFO's size to 1 MB, the limit for unprivileged processes, so the server finishes
+writing a result even while the host is busy elsewhere; only a larger one waits for the host's
+next read. This saves the hand-off to a reader thread: a thread wake-up on every result.
 
 ## Requests
 

@@ -32,6 +32,14 @@
 - Empty unicode-math radical degrees now report a zero-size `degree` ownership point,
   derived from the converted radical and its MATH parameters without changing PDF output.
 
+### Faster
+
+- Live updates on Linux: the engine thread reads the live engine's response FIFO itself
+  instead of taking each frame from a reader thread, which saves one thread wake-up per
+  result: about 0.04–0.07 ms of the fixed cost of an update (`rtex probe`, one-line
+  paragraph). The FIFO is given room for 1 MB, so the server still finishes writing a large
+  result while the host is not reading. macOS and Windows keep the reader thread.
+
 ## 0.0.6 (2026-11-01)
 
 ### Changed
