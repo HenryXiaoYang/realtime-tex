@@ -11,6 +11,7 @@ local dlbin = dofile(kpse.find_file("rtex-dl-bin.lua", "lua") or "rtex-dl-bin.lu
 local P = dofile(kpse.find_file("rtex-pic.lua", "lua") or "rtex-pic.lua")
 local gettime = os.gettimeofday
 local pack, format, floor = string.pack, string.format, math.floor
+local find, match, sub = string.find, string.match, string.sub
 local stdin = io.stdin
 
 local resp
@@ -361,8 +362,18 @@ local head_tokens, tail_after_group  -- built in init once the \luafunction slot
 -- reports the names and the session demotes the unit and restarts the engine.
 local function cs_names(source)
   local seen, names = {}, {}
-  for name in source:gmatch("\\(%a+)") do
-    if not seen[name] then seen[name] = true; names[#names + 1] = name end
+  -- what gmatch("\\(%a+)") finds, with a plain search for each backslash (several times faster)
+  local pos = 1
+  while true do
+    local b = find(source, "\\", pos, true)
+    if not b then break end
+    local name = match(source, "^%a+", b + 1)
+    if name then
+      if not seen[name] then seen[name] = true; names[#names + 1] = name end
+      pos = b + 1 + #name
+    else
+      pos = b + 1
+    end
   end
   return names
 end
@@ -443,7 +454,15 @@ function S.begin_compile(req_id, ctx_id, source, pics)
   if ctx.float then source = float_content(source, ctx.name) end
   local lines = {}
   local n = 0
-  for line in (source .. "\n"):gmatch("(.-)\n") do n = n + 1; lines[n] = line end
+  -- the lines of the source (a plain search: gmatch("(.-)\n") is several times slower)
+  local pos = 1
+  while true do
+    local e = find(source, "\n", pos, true)
+    n = n + 1
+    if not e then lines[n] = sub(source, pos); break end
+    lines[n] = sub(source, pos, e - 1)
+    pos = e + 1
+  end
   if n > 0 and lines[n] == "" then lines[n] = nil end
   local pics_by_line = nil
   if type(pics) == "table" then
