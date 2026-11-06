@@ -254,9 +254,10 @@ fn leaked_definitions_are_reported() {
 
 /// The server must be able to finish writing a result while the host is not reading it yet: a
 /// FIFO holds 64 KB on Linux and less on macOS, where a 9 KB display list blocked the server's
-/// write and the host's watchdog killed it. Here a result larger than any FIFO capacity is
+/// write and the host's watchdog killed it. Here a result larger than a FIFO's default size is
 /// produced and nothing is read for two seconds; the server's trace must show it was sent
-/// (the host drains the FIFO on a reader thread), and the result then arrives intact.
+/// (the host drains the FIFO on a reader thread; on Linux the FIFO has room for 1 MB), and the
+/// result then arrives intact.
 #[test]
 fn a_large_result_is_drained_while_the_host_is_not_reading() {
     let Some((tl, root, project)) = setup("drain") else {

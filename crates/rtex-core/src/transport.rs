@@ -25,8 +25,137 @@ const MAX_FRAME: usize = 256 << 20;
 /// connecting already read it.
 pub(crate) struct Connected {
     pub requests: File,
-    pub frames: crossbeam_channel::Receiver<Frame>,
+    pub frames: Frames,
     pub first: Option<Frame>,
+}
+
+pub(crate) use crossbeam_channel::{RecvTimeoutError, TryRecvError};
+
+/// Where response frames come from: a reader thread that drains the channel (macOS, Windows),
+/// or on Linux the FIFO itself, read by the thread that waits for the reply. Linux's `poll`
+/// reports a FIFO that becomes readable while it waits (macOS's does not, see `spawn_reader`)
+/// and the FIFO is given room for 1 MB, so the server still finishes writing while the host
+/// is not reading; the hand-off through a reader thread cost a thread wake-up per result.
+pub(crate) enum Frames {
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    Thread(crossbeam_channel::Receiver<Frame>),
+    #[cfg(target_os = "linux")]
+    Direct(direct::Reader),
+}
+
+impl Frames {
+    pub fn try_recv(&mut self) -> Result<Frame, TryRecvError> {
+        match self {
+            Frames::Thread(rx) => rx.try_recv(),
+            #[cfg(target_os = "linux")]
+            Frames::Direct(r) => r.try_recv(),
+        }
+    }
+
+    pub fn recv_timeout(&mut self, timeout: Duration) -> Result<Frame, RecvTimeoutError> {
+        match self {
+            Frames::Thread(rx) => rx.recv_timeout(timeout),
+            #[cfg(target_os = "linux")]
+            Frames::Direct(r) => r.recv_timeout(timeout),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod direct {
+    use super::*;
+    use std::os::fd::AsFd;
+
+    /// The FIFO's read end in non-blocking mode, with the bytes of a frame not complete yet.
+    pub(crate) struct Reader {
+        f: File,
+        buf: Vec<u8>,
+        chunk: Box<[u8]>,
+        /// The stream ended (end of file, a read error, a corrupt length): the error is
+        /// reported once, then the reader is disconnected (like the reader thread's channel).
+        ended: Option<Option<std::io::Error>>,
+    }
+
+    impl Reader {
+        pub fn new(f: File) -> Reader {
+            // room for a result of 1 MB (the default limit for unprivileged processes) in the
+            // FIFO, so the server finishes writing it even while the host is not reading yet
+            // (64 KB otherwise; when this fails, a larger result waits for the next read)
+            let fd = std::os::fd::AsRawFd::as_raw_fd(&f);
+            let _ = nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_SETPIPE_SZ(1 << 20));
+            Reader {
+                f,
+                buf: Vec::with_capacity(1 << 16),
+                chunk: vec![0; 1 << 16].into_boxed_slice(),
+                ended: None,
+            }
+        }
+
+        /// The first whole frame in `buf`, split off.
+        fn take_frame(&mut self) -> Option<Frame> {
+            let n = u32::from_le_bytes(self.buf.get(..4)?.try_into().unwrap()) as usize;
+            if n > MAX_FRAME {
+                self.ended = Some(None);
+                return Some(Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("response frame of {n} bytes"),
+                )));
+            }
+            if self.buf.len() < 4 + n {
+                return None;
+            }
+            let body = self.buf[4..4 + n].to_vec();
+            self.buf.drain(..4 + n);
+            Some(Ok(body))
+        }
+
+        /// Read what has arrived, without blocking: a whole frame once one is complete.
+        pub fn try_recv(&mut self) -> Result<Frame, TryRecvError> {
+            loop {
+                if let Some(e) = &mut self.ended {
+                    return e.take().map(Err).ok_or(TryRecvError::Disconnected);
+                }
+                if let Some(f) = self.take_frame() {
+                    return Ok(f);
+                }
+                match (&self.f).read(&mut self.chunk) {
+                    Ok(0) => self.ended = Some(Some(std::io::ErrorKind::UnexpectedEof.into())),
+                    Ok(n) => self.buf.extend_from_slice(&self.chunk[..n]),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        return Err(TryRecvError::Empty)
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(e) => self.ended = Some(Some(e)),
+                }
+            }
+        }
+
+        pub fn recv_timeout(&mut self, timeout: Duration) -> Result<Frame, RecvTimeoutError> {
+            use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+            let deadline = std::time::Instant::now() + timeout.min(Duration::from_secs(1 << 30));
+            loop {
+                match self.try_recv() {
+                    Ok(f) => return Ok(f),
+                    Err(TryRecvError::Disconnected) => return Err(RecvTimeoutError::Disconnected),
+                    Err(TryRecvError::Empty) => {}
+                }
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                if left.is_zero() {
+                    return Err(RecvTimeoutError::Timeout);
+                }
+                // whole milliseconds, rounded up: a timeout of 0 would spin
+                let ms = left.as_micros().div_ceil(1000).min(i32::MAX as u128) as i32;
+                let mut fds = [PollFd::new(self.f.as_fd(), PollFlags::POLLIN)];
+                match poll(
+                    &mut fds,
+                    PollTimeout::try_from(ms).unwrap_or(PollTimeout::MAX),
+                ) {
+                    Ok(_) | Err(nix::errno::Errno::EINTR) => {}
+                    Err(e) => self.ended = Some(Some(e.into())),
+                }
+            }
+        }
+    }
 }
 
 /// Read frames into `tx` until end of file, an error, or the receiver is gone.
@@ -57,18 +186,19 @@ fn read_frames(f: File, tx: crossbeam_channel::Sender<Frame>) {
     }
 }
 
-/// Drain the response channel on a thread of its own: blocking reads, frame by frame, into a
-/// channel. Nothing polls it: on macOS `poll` did not report a frame that arrived while it
+/// Drain the response channel on a thread of its own (macOS, Windows): blocking reads, frame by
+/// frame, into a channel. Nothing polls it: on macOS `poll` did not report a frame that arrived while it
 /// waited (only data already there), and a FIFO there holds less than a large result, so the
 /// server blocked writing a 9 KB display list while the host waited out its watchdog. Draining
 /// continuously also means the server never blocks on a full channel. The thread ends at end
 /// of file (the server exited or was killed) or when the server object is dropped.
 /// `before`: run on the thread before the first read (Windows waits there for the server to
 /// connect).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn spawn_reader(
     f: File,
     before: impl FnOnce(&File) -> std::io::Result<()> + Send + 'static,
-) -> Result<crossbeam_channel::Receiver<Frame>> {
+) -> Result<Frames> {
     let (tx, rx) = crossbeam_channel::unbounded();
     std::thread::Builder::new()
         .name("rtex-response-reader".into())
@@ -79,7 +209,7 @@ fn spawn_reader(
             }
         })
         .context("spawning the response reader")?;
-    Ok(rx)
+    Ok(Frames::Thread(rx))
 }
 
 #[cfg(unix)]
@@ -115,9 +245,13 @@ mod unix {
         pub fn connect(self, child: &mut Child, timeout: Duration) -> Result<Connected> {
             let stdin = child.stdin.take().context("no stdin")?;
             let resp = open_fifo_with_timeout(&self.fifo, child, timeout)?;
+            #[cfg(target_os = "linux")]
+            let frames = Frames::Direct(direct::Reader::new(resp));
+            #[cfg(not(target_os = "linux"))]
+            let frames = spawn_reader(set_blocking(resp)?, |_| Ok(()))?;
             Ok(Connected {
                 requests: File::from(std::os::fd::OwnedFd::from(stdin)),
-                frames: spawn_reader(resp, |_| Ok(()))?,
+                frames,
                 first: None,
             })
         }
@@ -157,7 +291,12 @@ mod unix {
                 }
             }
         }
-        // Back to blocking mode for normal framed reads.
+        Ok(f)
+    }
+
+    /// Back to blocking mode for the reader thread's framed reads.
+    #[cfg(not(target_os = "linux"))]
+    fn set_blocking(f: File) -> Result<File> {
         let fd = std::os::unix::io::AsRawFd::as_raw_fd(&f);
         let flags = nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_GETFL)?;
         let mut oflags = nix::fcntl::OFlag::from_bits_truncate(flags);
@@ -265,7 +404,7 @@ mod windows {
         /// Wait (up to `timeout`, failing early if the child exits) for the server's first
         /// frame. The server opens the request pipe before it writes that frame.
         pub fn connect(self, child: &mut Child, timeout: Duration) -> Result<Connected> {
-            let frames = spawn_reader(File::from(self.resp), wait_client)?;
+            let mut frames = spawn_reader(File::from(self.resp), wait_client)?;
             let t0 = Instant::now();
             let failed = |why: String| -> Result<Connected> {
                 // a reader still waiting for the server to connect: connect and leave, so it
@@ -305,5 +444,40 @@ mod windows {
                 first: Some(first),
             })
         }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn direct_reader_splits_frames_and_reports_the_end_once() {
+        let (r, w) = nix::unistd::pipe2(nix::fcntl::OFlag::O_NONBLOCK).unwrap();
+        let mut w = File::from(w);
+        let mut rd = direct::Reader::new(File::from(r));
+        assert!(matches!(rd.try_recv(), Err(TryRecvError::Empty)));
+        assert!(matches!(
+            rd.recv_timeout(Duration::from_millis(5)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        // a frame in two writes, then two frames in one
+        w.write_all(&[3, 0, 0, 0, b'a']).unwrap();
+        assert!(matches!(rd.try_recv(), Err(TryRecvError::Empty)));
+        w.write_all(b"bc\x01\0\0\0d\0\0\0\0").unwrap();
+        assert_eq!(rd.try_recv().unwrap().unwrap(), b"abc");
+        assert_eq!(
+            rd.recv_timeout(Duration::from_secs(1)).unwrap().unwrap(),
+            b"d"
+        );
+        assert_eq!(rd.try_recv().unwrap().unwrap(), b"");
+        drop(w);
+        let e = rd
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof);
+        assert!(matches!(rd.try_recv(), Err(TryRecvError::Disconnected)));
     }
 }

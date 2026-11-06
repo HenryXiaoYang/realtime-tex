@@ -5,7 +5,7 @@
 //! (`transport`).
 
 use crate::texlive::TexLive;
-use crate::transport::{Frame, Transport};
+use crate::transport::{Frame, Frames, Transport};
 use anyhow::{bail, Context, Result};
 use rtex_dl::DisplayList;
 use serde::{Deserialize, Serialize};
@@ -138,9 +138,8 @@ pub struct FastServer {
     child: Child,
     /// The request channel (the server's stdin on Unix, a named pipe on Windows).
     stdin: File,
-    /// Frames from the response channel, in order, drained by a dedicated reader thread with
-    /// blocking reads (see `transport`).
-    frames: crossbeam_channel::Receiver<Frame>,
+    /// Frames from the response channel, in order (see `transport::Frames`).
+    frames: Frames,
     /// A frame `wait_readable` took off the channel, not yet parsed.
     pending: Option<Frame>,
     pub generation: u64,
@@ -317,7 +316,7 @@ impl FastServer {
     /// Wait until a frame has arrived or `timeout` elapses (watchdog). On timeout the server
     /// is killed; the caller restarts it with a new generation.
     fn wait_readable(&mut self, timeout: Duration) -> Result<()> {
-        use crossbeam_channel::{RecvTimeoutError, TryRecvError};
+        use crate::transport::{RecvTimeoutError, TryRecvError};
         if self.pending.is_some() {
             return Ok(());
         }
@@ -379,12 +378,15 @@ impl FastServer {
         let t0 = Instant::now();
         let frame = match self.pending.take() {
             Some(f) => f,
-            None => self.frames.recv().unwrap_or_else(|_| {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "the response reader ended",
-                ))
-            }),
+            None => self
+                .frames
+                .recv_timeout(Duration::from_secs(86400))
+                .unwrap_or_else(|_| {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "the response reader ended",
+                    ))
+                }),
         };
         let buf = frame.context("server closed the response channel")?;
         self.parse_frame(&buf, t0, Ok(()))
