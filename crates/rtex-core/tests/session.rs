@@ -1689,3 +1689,37 @@ fn a_missing_package_does_not_restart_the_engine_in_a_loop() {
     );
     assert!(ready.is_some(), "no restart after the fix");
 }
+
+/// `\maketitle` on a title page of its own (report, book, article[titlepage]) is an
+/// allow-listed unit whose compile redefines `\maketitle`: the warm-up compile of it leaks, which
+/// restarts the engine and runs a pass. The next layout must not warm the same unit again, or the
+/// engine restarts after every pass, forever.
+#[test]
+fn a_leaking_title_page_does_not_restart_the_engine_in_a_loop() {
+    if rtex_core::texlive::TexLive::discover().is_err() {
+        eprintln!("SKIP: no lualatex");
+        return;
+    }
+    let root = std::env::temp_dir().join(format!("rtex-session-{}-titlepage", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("main.tex"),
+        "\\documentclass{report}\n\\title{t}\\author{}\\date{}\n\\begin{document}\n\\maketitle\n\n\\section{A}\n\nHello.\n\nWorld.\n\\end{document}\n",
+    )
+    .unwrap();
+    let mut cfg = SessionConfig::new(&project, "main.tex");
+    cfg.build_dir = root.join("build");
+    cfg.debounce = Duration::from_millis(50);
+    let s = Session::open(cfg).unwrap();
+    // the first start, its layout, at most one restart for the leaking warm-up and its pass;
+    // the loop restarted every 0.4 s
+    let (_, events) = s.wait_for(Duration::from_secs(20), |_| false);
+    let starts = events
+        .iter()
+        .filter(|e| matches!(e, Event::EngineState { state, .. } if state == "Starting"))
+        .count();
+    assert!(starts <= 2, "the engine restarted {starts} times");
+    s.close();
+}
