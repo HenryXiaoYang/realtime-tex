@@ -53,10 +53,10 @@ Time from keystroke to the updated paragraph in the editor's hands (median of 30
 
 | Paragraph | 10-page document | 100 pages | 300 pages |
 |---|---|---|---|
-| one line | 0.50 ms | 0.48 ms | 0.61 ms |
-| four lines | 1.04 ms | 1.10 ms | 1.18 ms |
-| ten lines | — | 2.39 ms | 1.94 ms |
-| a list, a figure, a table, display math | 1.4–1.9 ms | 1.5–1.7 ms | |
+| one line | 0.29 ms | 0.32 ms | 0.37 ms |
+| four lines | 0.66 ms | 0.93 ms | 0.88 ms |
+| ten lines | — | 1.65 ms | 1.55 ms |
+| a list, a figure, a table, display math | 0.9–1.5 ms | 1.1–1.9 ms | |
 
 Document length does not matter, only the paragraph does. The font setup matters too. With
 fontspec's default OpenType shaping, a long paragraph takes up to 4–5× longer than with TFM fonts

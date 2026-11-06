@@ -1,8 +1,12 @@
 # Benchmarks
 
-All numbers on this page were measured on **2026-10-10** with rtex 0.0.2. The machine was a
-4-vCPU cloud VM (Intel Xeon @ 2.10 GHz) running Linux with TeX Live 2026. A typical laptop is
-faster. Raw results are in [`bench/results/`](../bench/results/).
+Typing latency, background passes and the comparison with the paper were measured on
+**2026-11-06** with rtex 0.0.6 plus the changes in CHANGELOG "Unreleased". The font setups and
+the comparison with Typst and Overleaf are from **2026-10-10** (rtex 0.0.2). Both runs used a
+4-vCPU cloud VM (Intel Xeon @ 2.10 GHz) with Linux and TeX Live 2026, but not the same VM: the
+2026-11-06 one typesets about 20 % faster (hardware factor *h* 1.04 against 1.3, see
+[below](#compared-with-the-paper)), so compare figures within one run, not across them. A
+typical laptop is faster. Raw results are in [`bench/results/`](../bench/results/).
 
 ## Typing latency
 
@@ -13,18 +17,19 @@ books in the `book` class with Latin Modern, microtype and amsmath.
 
 | Paragraph | 10-page book | 100-page book | 300-page book |
 |---|---|---|---|
-| 1 line | 0.50 ms | 0.48 ms | 0.61 ms |
-| 4 lines | 1.04 ms | 1.10 ms | 1.18 ms |
-| 10–11 lines | — | 2.39 ms | 1.94 ms |
-| 3 lines with inline math | 0.89 ms | 0.90 ms | 1.24 ms |
+| 1 line | 0.29 ms | 0.32 ms | 0.37 ms |
+| 4 lines | 0.66 ms | 0.93 ms | 0.88 ms |
+| 10–11 lines | — | 1.65 ms | 1.55 ms |
+| 3 lines with inline math | 0.60 ms | 0.63 ms | 0.77 ms |
 
-The cost depends on the paragraph, not on the document. A 300-page book is as fast as a
-10-page one; the cells differ by up to ±20 %. That is partly noise on a shared VM, and partly
+The cost depends on the paragraph, not on the document. A 300-page book is about as fast as a
+10-page one; the cells differ by up to ±30 %. That is partly noise on a shared VM, and partly
 because each book's paragraphs are different text. The 300-page "inline math" paragraph is
-heavier on fractions than the 10-page one, and its TeX stage alone is 0.53 ms against 0.31 ms.
+heavier on fractions than the 10-page one, and its TeX stage alone is 0.36 ms against 0.24 ms.
+The 4-line paragraphs differ too (263 glyphs on the 100-page book, 215 on the 10-page one).
 
 When edits come back to back (the paper's method: the mean of a burst of 100), threads stay warm
-and the cost drops to 0.23–0.27 ms for one line and 0.7–1.0 ms for four lines.
+and the cost drops to 0.15–0.24 ms for one line and 0.48–0.73 ms for four lines.
 
 ### By kind of unit
 
@@ -32,20 +37,20 @@ Same method, on the books with every kind of unit (`--variant units`):
 
 | Unit | 10-page book | 100-page book | Rows | TeX stage (100 p) |
 |---|---|---|---|---|
-| heading (`\section`) | 0.80 ms | 0.95 ms | 1 | 0.49 ms |
-| paragraph with display math | 1.38 ms | 1.65 ms | 5 | 0.79 ms |
-| paragraph with a footnote | 1.90 ms | 1.73 ms | 3–5 | 0.99 ms |
-| list (`itemize`, 3 items) | 1.68 ms | 1.53 ms | 3 | 0.96 ms |
-| figure (image and caption) | 1.74 ms | 1.68 ms | 3 | 1.07 ms |
-| table (`booktabs`, caption) | 1.52 ms | 1.70 ms | 2 | 0.98 ms |
+| heading (`\section`) | 0.57 ms | 0.61 ms | 1 | 0.31 ms |
+| paragraph with display math | 0.94 ms | 1.08 ms | 5 | 0.59 ms |
+| paragraph with a footnote | 1.55 ms | 1.39 ms | 3–5 | 0.87 ms |
+| list (`itemize`, 3 items) | 1.14 ms | 1.13 ms | 3 | 0.74 ms |
+| figure (image and caption) | 1.47 ms | 1.87 ms | 3 | 1.11 ms |
+| table (`booktabs`, caption) | 1.14 ms | 1.16 ms | 2 | 0.69 ms |
 
 Environments spend most of their time in LaTeX's own machinery: `\list`, `\halign`,
 `\@startsection`, `\includegraphics`, counters. The P95 is within 1.5× of the median for every
-kind, except the footnote paragraph on the 100-page book (4.3 ms).
+kind, except the figure on the 100-page book (3.1 ms).
 
 ### Fonts matter most
 
-The same 300-page book in three font setups:
+The same 300-page book in three font setups (2026-10-10 run):
 
 | Font setup | 1 line | 4 lines | 11 lines | inline math |
 |---|---|---|---|---|
@@ -61,24 +66,25 @@ text, use `Renderer=Basic` or TFM fonts ([live-editing.md](live-editing.md#makin
 
 ### Where the time goes
 
-For a one-line paragraph on the 300-page book (0.61 ms in total):
+For a one-line paragraph on the 300-page book (0.37 ms in total):
 
 | Stage | Time |
 |---|---|
-| TeX: restoring the context and typesetting the box | 0.16 ms |
-| walking the box and encoding the display list | 0.07 ms |
-| everything else: two process hand-offs, thread wake-ups, decoding, the session | 0.38 ms |
+| TeX: restoring the context and typesetting the box | 0.11 ms |
+| walking the box and encoding the display list | 0.05 ms |
+| everything else: two process hand-offs, thread wake-ups, decoding, the session | 0.21 ms |
 
-For four lines (1.18 ms) it is 0.55, 0.23 and 0.40 ms. The walk costs about 1 µs per glyph. The
-fixed cost of 0.4 ms is mostly waking processes and threads that slept between keystrokes. That
+For four lines (0.88 ms) it is 0.44, 0.19 and 0.25 ms. The walk costs about 1 µs per glyph. The
+fixed cost of 0.2–0.25 ms is mostly waking processes and threads that slept between keystrokes. That
 is why bursts of edits are two to three times faster than isolated ones. On a laptop with
 faster context switches this part is smaller.
 
-This fixed cost is about 0.1 ms higher than in the previous recorded run (2026-10-08: 0.42 ms
-for one line on the 10-page book, now 0.50 ms). In between, the host started reading the
-engine's responses on a dedicated thread. That fixed lost results on macOS, where the old
-polling missed frames ([engine-protocol.md](engine-protocol.md#channels)), and the hand-off to
-that thread is the extra cost.
+On macOS and Windows the host reads the engine's responses on a dedicated thread, which fixed
+lost results on macOS, where polling missed frames
+([engine-protocol.md](engine-protocol.md#channels)); the hand-off to that thread costs about
+0.1 ms. On Linux, where polling is reliable, the thread that waits for the result reads it
+itself. Measured on the same VM against 0.0.6, that and cheaper per-keystroke bookkeeping
+brought one line on the 300-page book from 0.56 to 0.38 ms.
 
 ## Background passes
 
@@ -87,27 +93,28 @@ layout is one or more passes, repeated until cross-references settle.
 
 | Document | Pages | Live engine ready | First layout | Each later layout | Clean export |
 |---|---|---|---|---|---|
-| book, TFM fonts | 10 | 0.6 s | 1.5 s (2 passes) | 0.5 s | 1.4 s |
-| book, TFM fonts | 100 | 0.7 s | 7.2 s (2 passes) | 3.1 s | 2.5 s |
-| book, TFM fonts | 300 | 0.6 s | 19.4 s (2 passes) | 9.4 s | 5.1 s |
-| book, OpenType (node mode) | 100 | 1.2 s | 15.2 s (2 passes) | 6.9 s | 10.9 s |
-| mixed: TOC, biblatex/biber, floats, footnotes | 10 | 1.9 s | 6.3 s (3 passes) | 1.9 s | 7.8 s |
-| mixed | 100 | 1.8 s | 19.0 s (3 passes) | 6.6 s | 16.2 s |
+| book, TFM fonts | 10 | 0.5 s | 0.9 s (2 passes) | 0.2 s | 1.2 s |
+| book, TFM fonts | 100 | 0.5 s | 3.4 s (2 passes) | 1.6 s | 2.0 s |
+| book, TFM fonts | 300 | 0.5 s | 10.3 s (2 passes) | 4.5 s | 4.1 s |
+| book, OpenType (node mode) | 100 | 1.2 s | 10.0 s (2 passes) | 4.2 s | 8.7 s |
+| mixed: TOC, biblatex/biber, floats, footnotes | 10 | 1.4 s | 4.9 s (3 passes) | 1.4 s | 6.6 s |
+| mixed | 100 | 1.4 s | 14.0 s (3 passes) | 4.5 s | 12.8 s |
 
 "Each later layout" is a pass after a one-character edit: the median of five, each needing one
 pass. It runs in the standby engine, which already has the preamble loaded. "Clean export" is a
 full PDF build without the capture package, with as many passes as the document needs (2 or 3
-here).
+here). Each figure is the median of two runs.
 
 **What makes passes slow.** For long documents, the capture package is the main cost. It writes
-a display list for every page, as JSON: about 120 KB per page, 14 MB for the 100-page book.
-Measured directly on the 100-page book, one LuaLaTeX run takes 1.25 s without the capture
-package and 3.3 s with it. Passes only matter after you stop typing, and live updates continue
-meanwhile. Still, this is the obvious next thing to optimise: write page lists in binary, and
-only for pages that changed.
+a display list for every page, as JSON: about 120 KB per page, 14 MB for the 100-page book. On
+the 100-page book, encoding that JSON takes 0.45 s of a 2.1 s LuaLaTeX run (1.25 s before the
+encoder was rewritten), and the host parses only the pages whose JSON changed. Measured on the
+same VM against 0.0.6, a later layout of the 300-page book takes 4.8 s instead of 7.6 s and the
+first one 10.1 s instead of 16.4 s. The next step would be binary page lists, written only for
+pages that changed.
 
 For short documents the standby engine helps most. Starting LuaLaTeX and loading the preamble
-is most of a short run, so a later layout of the 10-page book takes 0.5 s, against 1.5 s for
+is most of a short run, so a later layout of the 10-page book takes 0.2 s, against 0.9 s for
 the first.
 
 **Pictures.** TikZ and pgfplots documents are dominated by drawing. The picture cache reuses
@@ -119,7 +126,7 @@ shortened a pass from 45 s to 18 s.
 This times the same text in all three: the document the paper's Typst comparison uses. It is
 Lorem ipsum paragraphs on A4 at 11 pt, about five lines each, with the middle paragraph edited
 30 times. `bench/compare/compare.py` builds a LaTeX version of it and runs everything on the same
-machine (2026-10-10, the VM above):
+machine (2026-10-10, rtex 0.0.2, the earlier VM):
 
 | Pages | rtex, per edit (P95) | Typst 0.15.1, `typst watch` | Typst, one page exported | Full pdfLaTeX run | Full LuaLaTeX run |
 |---|---|---|---|---|---|
@@ -182,18 +189,18 @@ The design follows Clemens Lode, *Real-Time LuaTeX: Recompiling Large Documents 
 
 | Paragraph | Paper (i7-1355U laptop) | This VM |
 |---|---|---|
-| short | 0.17 ms | 0.05 ms |
-| medium | 0.70 ms | 0.92 ms |
-| long | 1.99 ms | 2.56 ms |
-| inline math | 0.20 ms | 0.24 ms |
-| display math | 0.11 ms | 0.14 ms |
+| short | 0.17 ms | 0.04 ms |
+| medium | 0.70 ms | 0.73 ms |
+| long | 1.99 ms | 1.69 ms |
+| inline math | 0.20 ms | 0.16 ms |
+| display math | 0.11 ms | 0.10 ms |
 
-So this VM is about 1.3× slower than the paper's laptop at typesetting (`rtex bench` calls this
-the hardware factor *h*). The paper's full round trip, editor to engine and back excluding
-drawing, was 0.79 ms for a short paragraph and 6.11 ms for a medium one. rtex measures 0.5–0.6
-ms and 1.0–1.2 ms here, on slower hardware. Most of the difference is in the work around TeX.
+So this VM is about as fast as the paper's laptop at typesetting: `rtex bench` calls this ratio
+the hardware factor *h*, 1.04 here (the 2026-10-10 VM had 1.3). The paper's full round trip, editor to engine and back excluding
+drawing, was 0.79 ms for a short paragraph and 6.11 ms for a medium one. rtex measures 0.29–0.37
+ms and 0.66–0.93 ms here. Most of the difference is in the work around TeX.
 For a medium paragraph, the paper reports 4.99 ms for line breaking plus walking the result. rtex
-walks the boxes and encodes a compact binary display list in 0.23 ms.
+walks the boxes and encodes a compact binary display list in about 0.2 ms.
 
 ## Running the benchmarks
 
@@ -219,8 +226,10 @@ Add `--quick` for a smoke run. Other font setups: `--fonts pagella-base` (`Rende
 - the walk and encoding of a 4-line paragraph ≤ 0.5 ms;
 - 100- and 300-page books within 1.25× of the 10-page book.
 
-In this run every limit passed except one size ratio: inline math on 300 pages vs 10 pages, 1.40.
-As explained above, that compares two different paragraphs. CI runs a quick version on GitHub's
+In the 2026-11-06 run every limit passed except five size ratios between 1.27 and 1.40 (one
+line, four lines and inline math on 300 vs 10 pages, four lines on 100 vs 10, the figure on 100
+vs 10). As explained above, they compare different paragraphs, and the 10-page cells are the
+fastest of the run. CI runs a quick version on GitHub's
 shared runners and only warns when a limit is missed.
 
 `rtex probe --project DIR` breaks one paragraph's latency into stages and times every unit
