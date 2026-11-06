@@ -61,7 +61,10 @@ loop {
 **Edits** are byte ranges in the UTF-8 text of a file: `start_byte..end_byte` is replaced by
 `text`. Paths are relative to the project root. An absolute path inside the project also works,
 and on Windows either slash direction is accepted. If you have the whole buffer instead of a
-diff (an unsaved file, a file switched in from disk), use `set_document(path, text)`.
+diff (an unsaved file, a file switched in from disk), use `set_document(path, text)`. It
+applies only the bytes that differ, so sending the buffer when a file opens keeps the units'
+ids, the layout's contexts and the running engine. A text the session already holds changes
+nothing (`routed` is `"background"`, with the reason `unchanged`).
 `apply_edit` and `set_document` return immediately; results arrive as events.
 
 Other calls:

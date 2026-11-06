@@ -587,18 +587,20 @@ impl Session {
             .unwrap_or_default()
     }
 
-    /// Replace a whole buffer. Treated as an edit covering the full text.
+    /// Replace a whole buffer. Treated as an edit of the bytes that differ: a host that sends
+    /// its buffer when it opens the file must not give every span a new id and restart the
+    /// engine (an edit covering the whole file covers the preamble). The text the session
+    /// already holds changes nothing (routed to the background, reason `unchanged`).
     pub fn set_document(&self, rel_path: &str, text: &str) -> Result<EditResult> {
         let key = self.rel_key(rel_path);
         let rel_path = key.as_str();
-        let len = self
+        let diff = self
             .shared
             .files
             .lock()
             .get(rel_path)
-            .map(|f| f.text.len())
-            .unwrap_or(0);
-        if len == 0 && !self.shared.files.lock().contains_key(rel_path) {
+            .map(|f| crate::document::diff_edit(&f.text, text));
+        if diff.is_none() {
             // the snapshot writes the file at this key
             if !crate::paths::inside_project(rel_path) {
                 return Err(anyhow!("{rel_path} is outside the project"));
@@ -622,14 +624,17 @@ impl Session {
                 host_us: [0, 0, 0],
             });
         }
-        self.apply_edit(
-            rel_path,
-            Edit {
-                start_byte: 0,
-                end_byte: len,
-                text: text.to_string(),
-            },
-        )
+        match diff.flatten() {
+            Some(edit) => self.apply_edit(rel_path, edit),
+            None => Ok(EditResult {
+                edit_id: self.shared.edit_counter.fetch_add(1, Ordering::SeqCst) + 1,
+                source_revision: self.shared.source_revision.load(Ordering::SeqCst),
+                outcome: EditOutcome::default(),
+                routed: "background".into(),
+                reasons: vec!["unchanged".into()],
+                host_us: [0, 0, 0],
+            }),
+        }
     }
 
     pub fn apply_edit(&self, rel_path: &str, edit: Edit) -> Result<EditResult> {
