@@ -41,6 +41,15 @@
 
 ### Faster
 
+- Background passes on long documents: the capture writes its per-page display lists 2.7×
+  faster (one `string.format` per glyph, no per-element calls for number arrays, no `gsub`
+  for strings with nothing to escape; the JSON is byte-identical), and installing a layout
+  parses only the pages whose capture text changed instead of parsing every page and
+  serializing it again to hash it. The paragraph flags and definition scan are cheaper too.
+  On the 300-page TFM book a later layout after a one-character edit takes 4.8 s instead of
+  7.6 s and the first layout 10.1 s instead of 16.4 s; on the 100-page book 1.6 s instead of
+  2.6 s and 3.6 s instead of 5.7 s. `PageUpdate.hash` is now the hash of the page's capture
+  text; it still changes whenever the page does.
 - Live updates on Linux: the engine thread reads the live engine's response FIFO itself
   instead of taking each frame from a reader thread, which saves one thread wake-up per
   result: about 0.04–0.07 ms of the fixed cost of an update (`rtex probe`, one-line
