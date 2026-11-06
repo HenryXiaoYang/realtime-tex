@@ -52,6 +52,9 @@
 - The live engine resets the document's counters after each compile by register number
   instead of looking each `\c@<name>` up by name: 0.004–0.006 ms instead of 0.009–0.017 ms
   for the 18 counters of the book fixtures.
+- The live engine splits a unit's source into lines and finds its control sequences with
+  plain string searches instead of Lua patterns: about 0.019 ms less per compile of a
+  1.5 KB paragraph, 0.002 ms for a one-line one.
 
 ## 0.0.6 (2026-11-01)
 
