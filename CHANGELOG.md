@@ -49,6 +49,9 @@
 - A keystroke updates a file's span and line tables in place instead of rebuilding them:
   on the 300-page book (one 880 KB file), applying an edit takes about 0.02 ms less (0.075
   → 0.055 ms in a running session). What is left is mostly moving the text after the edit.
+- The live engine resets the document's counters after each compile by register number
+  instead of looking each `\c@<name>` up by name: 0.004–0.006 ms instead of 0.009–0.017 ms
+  for the 18 counters of the book fixtures.
 
 ## 0.0.6 (2026-11-01)
 

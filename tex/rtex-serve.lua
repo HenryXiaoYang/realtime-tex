@@ -122,6 +122,9 @@ local FLOAT_ENVS = { figure = "columnwidth", table = "columnwidth", ["figure*"] 
 -- LaTeX counters (c@<name>) known at start-up; replayed per unit and restored after each compile
 S.counter_names = {}
 S.counter_base = {}
+-- name -> what tex.getcount takes for it: the register number of a \countdef'd counter (no
+-- name lookup per compile), else the name of its count
+S.counter_reg = {}
 S.the_base = {}
 -- idle meanings of the macros the capture reports (looked up lazily)
 -- \iftrue / \iffalse for a \newif switch (no token.get_meaning for a primitive), else nil
@@ -499,10 +502,12 @@ local function restore_counters(cur)
   local cb = S.counter_base
   local start = cur.ctx and cur.ctx.counters or {}
   local advanced = nil
+  local reg = S.counter_reg
   for name, v in pairs(cb) do
-    local now = getcount("c@" .. name)
+    local r = reg[name]
+    local now = getcount(r)
     if now ~= v then
-      tex.setcount("global", "c@" .. name, v)
+      tex.setcount("global", r, v)
       if name ~= "page" and now ~= (start[name] or v) then
         advanced = advanced or {}
         advanced[name] = now
@@ -788,6 +793,9 @@ function S.init(boxnum, countnum, cctnum)
     local ok, v = pcall(getcount, "c@" .. name)
     if ok then
       S.counter_names[#S.counter_names + 1] = name; S.counter_base[name] = v
+      local okt, t = pcall(create, "c@" .. name)
+      local reg = okt and t and t.cmdname == "assign_int" and t.index
+      S.counter_reg[name] = (reg and getcount(reg) == v) and reg or ("c@" .. name)
       local okm, body = pcall(token.get_macro, "the" .. name)
       S.the_base[name] = okm and body or nil
     end
