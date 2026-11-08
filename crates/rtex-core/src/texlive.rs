@@ -23,8 +23,9 @@ pub struct TexLive {
 /// TeX run first on every LuaLaTeX command line rtex builds: puts the main file's folder and
 /// the real project directory on LaTeX's `\input@path`. LaTeX runs at the top of the project,
 /// so a main file in a subfolder (`cv/sop/sop.tex`) reads `\input{body}` from that subfolder
-/// as `latexmk -cd` would; passes run in a copy of the project, so a path that leaves it
-/// (`\input{../shared/x}`, `\graphicspath{{../figures/}}`) would miss. `\input`,
+/// as `latexmk -cd` would (`lualatex_cmd` also puts the folder on `TEXINPUTS` ahead of `.`, so
+/// a same-named file at the top does not win); passes run in a copy of the project, so a path
+/// that leaves it (`\input{../shared/x}`, `\graphicspath{{../figures/}}`) would miss. `\input`,
 /// `\IfFileExists` retry a name not found under each `\input@path` entry. graphicx searches
 /// its `\graphicspath` list instead, so at `\begin{document}` the main file's folder and a copy
 /// of each relative entry under it go first, and copies under the real folders last. (No `%`,
@@ -101,10 +102,13 @@ impl TexLive {
         let mut c = Command::new(&self.lualatex);
         c.current_dir(cwd);
         use crate::paths::{prepend_search, tex};
-        let texinputs = prepend_search(
-            &format!("{}//", tex(&self.rtex_texdir.join("latex"))),
-            "TEXINPUTS",
-        );
+        let mut first = format!("{}//", tex(&self.rtex_texdir.join("latex")));
+        if let Some(m) = &self.main_dir {
+            // before kpathsea's `.`: a name found in the main file's folder wins over a
+            // same-named file at the top, as with `latexmk -cd` (relative to `cwd`)
+            first = format!("{first}{}{m}", crate::paths::SEARCH_SEP);
+        }
+        let texinputs = prepend_search(&first, "TEXINPUTS");
         let luainputs = prepend_search(&format!("{}//", tex(&self.rtex_texdir)), "LUAINPUTS");
         c.env("TEXINPUTS", texinputs)
             .env("LUAINPUTS", luainputs)
