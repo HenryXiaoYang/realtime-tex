@@ -9,16 +9,20 @@ use rtex_dl::Item;
 
 // The \directlua lines stand in for what a real document does before its first graphic:
 // PDF objects written by other packages (so object numbers run ahead of image indices) and an
-// image made outside graphicx, as the picture cache makes one for each cached picture.
+// image made outside graphicx, as the picture cache makes one for each cached picture. The
+// images are written by the test (mwe's example images are not in every TeX Live install).
 const DOC: &str = r#"\documentclass{article}
 \usepackage{graphicx}
 \begin{document}
 \directlua{for i = 1, 20 do pdf.immediateobj("<<>>") end}%
-\directlua{node.write(img.node(img.scan(img.new{filename = kpse.find_file("example-image-b.pdf")})))}%
-\includegraphics[width=2cm]{example-image-a.pdf}
-\includegraphics[width=2cm]{example-image-c.pdf}
+\directlua{node.write(img.node(img.scan(img.new{filename = "b.png"})))}%
+\includegraphics[width=2cm]{a.png}
+\includegraphics[width=2cm]{c.png}
 \end{document}
 "#;
+
+// a 1x1 grey PNG
+const PNG_1X1: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x00\x00\x00\x00\x3a\x7e\x9b\x55\x00\x00\x00\nIDAT\x78\x9c\x63\x60\x00\x00\x00\x02\x00\x01\x48\xaf\xa4\x71\x00\x00\x00\x00IEND\xae\x42\x60\x82";
 
 #[test]
 fn image_items_are_keyed_by_their_rule_index() {
@@ -31,6 +35,9 @@ fn image_items_are_keyed_by_their_rule_index() {
     let project = root.join("project");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("main.tex"), DOC).unwrap();
+    for name in ["a.png", "b.png", "c.png"] {
+        std::fs::write(project.join(name), PNG_1X1).unwrap();
+    }
     let cap =
         run_capture_with(&tl, &project, "main.tex", &root.join("out"), true, "", None).unwrap();
     let dl = cap.page(1).unwrap();
@@ -51,7 +58,7 @@ fn image_items_are_keyed_by_their_rule_index() {
     // the image made outside graphicx has no entry; the two graphics resolve to their files
     assert_eq!(
         files,
-        ["example-image-a.pdf", "example-image-c.pdf"],
+        ["a.png", "c.png"],
         "images_info keys {:?}",
         dl.images.keys().collect::<Vec<_>>()
     );
