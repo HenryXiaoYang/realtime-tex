@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A main file in a subfolder reads `\input{name}` (and other files found by name) from its
+  own folder even when a same-named file sits at the top of the project, as `latexmk -cd`
+  does (#40).
+
 ## 0.0.7 (2026-11-06)
 
 ### Added

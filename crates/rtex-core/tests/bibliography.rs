@@ -261,6 +261,8 @@ fn a_main_file_in_a_subfolder_reads_paths_relative_to_its_own_folder() {
                 "cv/sop/body.tex",
                 "A paragraph from the folder of the main file.\n",
             ),
+            // a same-named file at the top must not win over the one next to the main file
+            ("body.tex", "\\typeout{RTEX read the top-level body.tex}\n"),
             ("references.bib", BIB),
             ("projectplain.bst", &bst),
         ],
@@ -291,6 +293,10 @@ fn a_main_file_in_a_subfolder_reads_paths_relative_to_its_own_folder() {
     assert!(
         !log.contains("body.tex' not found"),
         "\\input missed:\n{log}"
+    );
+    assert!(
+        !log.contains("RTEX read the top-level body.tex"),
+        "\\input took the top-level file:\n{log}"
     );
     assert!(!log.contains("undefined"), "citation undefined:\n{log}");
     let bbl = std::fs::read_to_string(pass.join("sop.bbl")).unwrap_or_default();
