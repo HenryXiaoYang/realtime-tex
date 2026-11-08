@@ -7,6 +7,9 @@
 - A main file in a subfolder reads `\input{name}` (and other files found by name) from its
   own folder even when a same-named file sits at the top of the project, as `latexmk -cd`
   does (#40).
+- The live preview no longer draws another graphic of the document in place of an
+  `\includegraphics` image that comes after cached pictures: `images_info` is keyed by the
+  image rule index the IMAGE items carry, not the PDF object number (#41, by SunXin121).
 
 ## 0.0.7 (2026-11-06)
 
