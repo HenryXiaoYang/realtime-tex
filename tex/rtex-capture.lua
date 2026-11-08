@@ -479,7 +479,28 @@ function C.post_linebreak(head, groupcode)
 end
 
 C.images = {}
+-- The graphicx hook passes \lastsavedimageresourceindex, which is the image's PDF object
+-- number, while IMAGE display-list items carry the image rule's index (LuaTeX's image index,
+-- counted over all images, cached pictures included). An \useimageresource in a scratch box
+-- gives the rule, and so the index; it creates no image and ships nothing.
+function C.image_rule_index(objnum)
+  C._rule_index = nil
+  tex.runtoks(function()
+    tex.sprint("\\begingroup\\setbox0\\hbox{\\useimageresource " .. objnum ..
+               "}\\directlua{rtex_capture._rule_index = rtex_capture.box_image_index(0)}\\endgroup")
+  end)
+  return C._rule_index or objnum
+end
+function C.box_image_index(b)
+  local box = tex.box[b]
+  if not box then return nil end
+  for n in node.traverse_id(node.id("rule"), box.head) do
+    if n.subtype == 2 and n.index then return n.index end
+  end
+  return nil
+end
 function C.image(index, file, page, pages)
+  index = C.image_rule_index(index)
   C.images[tostring(index)] = { index = index, file = file, page = tonumber(page) or 1, pages = pages }
 end
 
