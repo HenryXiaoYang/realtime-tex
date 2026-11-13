@@ -208,7 +208,7 @@ background path.
 
 | Piece | File |
 |---|---|
-| Session API, shared state | `crates/rtex-core/src/session/mod.rs` |
+| Session API, shared state | `crates/rtex-core/src/session/mod.rs` (`Session`), `config.rs`, `events.rs`, `edit.rs` (applying an edit), `state.rs` |
 | Splitting files into spans | `crates/rtex-core/src/document/` (types in `mod.rs`, `segment.rs`, `buffer.rs` for edits in place, `inputs.rs` for `\input`) |
 | Live or background, borrowed contexts | `crates/rtex-core/src/session/route.rs`, `eligibility/` (entry points in `mod.rs`, the scanner in `scan*.rs`, the allow-lists in `vocab_*.rs`) |
 | The live engine process and its channel | `crates/rtex-core/src/engine.rs`, `transport.rs` |
