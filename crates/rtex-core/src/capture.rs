@@ -375,6 +375,13 @@ pub fn capture_command(
         .to_string();
     // a run that ends in the preamble (\stop) writes no capture: never collect the last one's
     let _ = std::fs::remove_file(out_dir.join(format!("{jobname}.rtex.json")));
+    // nor a page of the pass that ran here before, should this run fail to write one
+    let page_prefix = format!("{jobname}.rtex-page");
+    for e in std::fs::read_dir(&out_dir)?.flatten() {
+        if e.file_name().to_string_lossy().starts_with(&page_prefix) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     let mut cmd = tl.lualatex_cmd(src_dir);
     cmd.arg("-interaction=nonstopmode")
         .arg("-file-line-error")

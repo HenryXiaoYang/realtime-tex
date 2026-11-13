@@ -252,7 +252,12 @@ end
 
 local function bstr(s)
   s = tostring(s or "")
-  if #s > 65535 then s = s:sub(1, 65535) end
+  if #s > 65535 then
+    -- cut before a character, not inside one: the reader rejects invalid UTF-8
+    local n = 65535
+    while n > 0 and s:byte(n + 1) & 0xC0 == 0x80 do n = n - 1 end
+    s = s:sub(1, n)
+  end
   return pack("<s2", s)
 end
 
