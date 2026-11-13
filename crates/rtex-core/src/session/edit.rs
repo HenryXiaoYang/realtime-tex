@@ -118,48 +118,7 @@ impl Session {
             outcome.preamble_changed = true;
         }
         if outcome.preamble_changed {
-            self.shared.preamble_revision.store(rev, Ordering::SeqCst);
-            self.load_new_inputs();
-            {
-                let files = self.shared.files.lock();
-                let texts = texts_of(&files);
-                let preamble = effective_preamble(&texts, &self.shared.cfg.main_file);
-                *self.shared.preamble_inputs.lock() =
-                    preamble_input_set(&texts, &self.shared.cfg.main_file);
-                *self.shared.inputted.lock() = crate::document::inputted_files(&texts);
-                let mut policy = Policy::from_preamble(
-                    &preamble,
-                    &self.shared.cfg.trusted_macros,
-                    &self.shared.cfg.unit_envs,
-                );
-                policy.permissive = self.shared.cfg.eligibility == EligibilityMode::Probe;
-                policy.math_owner_attribute = self.shared.cfg.math_owner_attribute;
-                let rules = policy.segment_rules();
-                *self.shared.policy.lock() = policy;
-                drop(files);
-                let mut files = self.shared.files.lock();
-                for fb in files.values_mut() {
-                    if fb.rules != rules {
-                        fb.rules = rules.clone();
-                        fb.resegment(&mut self.shared.ids.lock(), rev);
-                    }
-                }
-            }
-            self.shared
-                .bg_change
-                .lock()
-                .entry(rel_path.to_string())
-                .or_default()
-                .push((rev, 0));
-            // restart the engine with the new preamble, drop overlays and the standby, schedule a pass
-            if let Some(w) = self.shared.standby.lock().take() {
-                w.kill();
-            }
-            self.shared.live.lock().on_preamble_change();
-            self.shared.engine_generation.fetch_add(1, Ordering::SeqCst);
-            self.shared.pending.lock().clear();
-            self.shared.pending_signal.0.send(()).ok();
-            self.schedule_background();
+            self.on_preamble_edit(rel_path, rev);
             return Ok(EditResult {
                 edit_id,
                 source_revision: rev,
@@ -191,70 +150,8 @@ impl Session {
         // a merge the merged paragraph, a fresh paragraph borrows a context); the first one in
         // document order decides the reported outcome. Removed spans are announced as empty
         // updates so hosts clear what they drew for them.
-        let mut requests: Vec<FastRequest> = Vec::new();
-        let mut primary: Option<(ParaId, bool, Vec<String>)> = None;
-        let mut any_background = false;
-        {
-            let files = self.shared.files.lock();
-            let fb = files
-                .get(rel_path)
-                .ok_or_else(|| anyhow!("unknown file {rel_path}"))?;
-            let layout = self.shared.layout.lock();
-            let policy = self.shared.policy.lock();
-            let mut cands: Vec<ParaId> = outcome
-                .touched
-                .iter()
-                .chain(outcome.added.iter())
-                .copied()
-                .collect();
-            cands.sort_by_key(|id| fb.span(*id).map(|sp| sp.range.start).unwrap_or(usize::MAX));
-            cands.dedup();
-            for id in cands {
-                let Some(span) = fb.span(id) else { continue };
-                let (req, reasons) =
-                    self.route_span(rel_path, &files, fb, span, rev, edit_id, &layout, &policy);
-                let live = req.is_some();
-                any_background |= !live;
-                if !live && self.shared.cfg.debug_dir.is_some() {
-                    debug_request_line(
-                        &self.shared,
-                        &format!("par {} refused: {}", id.0, reasons.join("; ")),
-                    );
-                }
-                if primary.is_none() {
-                    primary = Some((id, live, reasons));
-                }
-                if let Some(r) = req {
-                    requests.push(r);
-                }
-            }
-            if !outcome.removed.is_empty() {
-                let versions = Versions {
-                    source_revision: rev,
-                    context_revision: layout.context_revision,
-                    engine_generation: self.shared.engine_generation.load(Ordering::SeqCst),
-                    layout_version: layout.layout_version,
-                };
-                for id in &outcome.removed {
-                    self.shared
-                        .events
-                        .send(Event::ParagraphUpdate {
-                            par_id: *id,
-                            edit_id,
-                            versions,
-                            status: "removed".into(),
-                            reasons: vec![],
-                            fragments: vec![],
-                            pagination_stale: true,
-                            context_stale: false,
-                            dl: DisplayList::default(),
-                            diagnostics: vec![],
-                            timing: Timing::default(),
-                        })
-                        .ok();
-                }
-            }
-        }
+        let (requests, primary, any_background) =
+            self.route_touched(rel_path, rev, edit_id, &outcome)?;
         let t_elig = t_start.elapsed();
         let Some((primary_id, primary_live, primary_reasons)) = primary else {
             // nothing routable (e.g. everything deleted): background only
@@ -420,5 +317,130 @@ impl Session {
             *self.shared.inputted.lock() = crate::document::inputted_files(&texts_of(&files));
         }
         added
+    }
+
+    /// An edit changed the preamble: rebuild the policy from it, re-segment the files whose rules
+    /// changed, restart the live engine and schedule a pass.
+    fn on_preamble_edit(&self, rel_path: &str, rev: Revision) {
+        self.shared.preamble_revision.store(rev, Ordering::SeqCst);
+        self.load_new_inputs();
+        {
+            let files = self.shared.files.lock();
+            let texts = texts_of(&files);
+            let preamble = effective_preamble(&texts, &self.shared.cfg.main_file);
+            *self.shared.preamble_inputs.lock() =
+                preamble_input_set(&texts, &self.shared.cfg.main_file);
+            *self.shared.inputted.lock() = crate::document::inputted_files(&texts);
+            let mut policy = Policy::from_preamble(
+                &preamble,
+                &self.shared.cfg.trusted_macros,
+                &self.shared.cfg.unit_envs,
+            );
+            policy.permissive = self.shared.cfg.eligibility == EligibilityMode::Probe;
+            policy.math_owner_attribute = self.shared.cfg.math_owner_attribute;
+            let rules = policy.segment_rules();
+            *self.shared.policy.lock() = policy;
+            drop(files);
+            let mut files = self.shared.files.lock();
+            for fb in files.values_mut() {
+                if fb.rules != rules {
+                    fb.rules = rules.clone();
+                    fb.resegment(&mut self.shared.ids.lock(), rev);
+                }
+            }
+        }
+        self.shared
+            .bg_change
+            .lock()
+            .entry(rel_path.to_string())
+            .or_default()
+            .push((rev, 0));
+        // restart the engine with the new preamble, drop overlays and the standby, schedule a pass
+        if let Some(w) = self.shared.standby.lock().take() {
+            w.kill();
+        }
+        self.shared.live.lock().on_preamble_change();
+        self.shared.engine_generation.fetch_add(1, Ordering::SeqCst);
+        self.shared.pending.lock().clear();
+        self.shared.pending_signal.0.send(()).ok();
+        self.schedule_background();
+    }
+
+    /// Routes every body span the edit touched or created, in document order, and announces the
+    /// removed ones. Returns the live requests, the first span with whether it went live and why
+    /// not, and whether any span needs the background.
+    #[allow(clippy::type_complexity)]
+    fn route_touched(
+        &self,
+        rel_path: &str,
+        rev: Revision,
+        edit_id: u64,
+        outcome: &EditOutcome,
+    ) -> Result<(Vec<FastRequest>, Option<(ParaId, bool, Vec<String>)>, bool)> {
+        let mut requests: Vec<FastRequest> = Vec::new();
+        let mut primary: Option<(ParaId, bool, Vec<String>)> = None;
+        let mut any_background = false;
+        {
+            let files = self.shared.files.lock();
+            let fb = files
+                .get(rel_path)
+                .ok_or_else(|| anyhow!("unknown file {rel_path}"))?;
+            let layout = self.shared.layout.lock();
+            let policy = self.shared.policy.lock();
+            let mut cands: Vec<ParaId> = outcome
+                .touched
+                .iter()
+                .chain(outcome.added.iter())
+                .copied()
+                .collect();
+            cands.sort_by_key(|id| fb.span(*id).map(|sp| sp.range.start).unwrap_or(usize::MAX));
+            cands.dedup();
+            for id in cands {
+                let Some(span) = fb.span(id) else { continue };
+                let (req, reasons) =
+                    self.route_span(rel_path, &files, fb, span, rev, edit_id, &layout, &policy);
+                let live = req.is_some();
+                any_background |= !live;
+                if !live && self.shared.cfg.debug_dir.is_some() {
+                    debug_request_line(
+                        &self.shared,
+                        &format!("par {} refused: {}", id.0, reasons.join("; ")),
+                    );
+                }
+                if primary.is_none() {
+                    primary = Some((id, live, reasons));
+                }
+                if let Some(r) = req {
+                    requests.push(r);
+                }
+            }
+            if !outcome.removed.is_empty() {
+                let versions = Versions {
+                    source_revision: rev,
+                    context_revision: layout.context_revision,
+                    engine_generation: self.shared.engine_generation.load(Ordering::SeqCst),
+                    layout_version: layout.layout_version,
+                };
+                for id in &outcome.removed {
+                    self.shared
+                        .events
+                        .send(Event::ParagraphUpdate {
+                            par_id: *id,
+                            edit_id,
+                            versions,
+                            status: "removed".into(),
+                            reasons: vec![],
+                            fragments: vec![],
+                            pagination_stale: true,
+                            context_stale: false,
+                            dl: DisplayList::default(),
+                            diagnostics: vec![],
+                            timing: Timing::default(),
+                        })
+                        .ok();
+                }
+            }
+        }
+        Ok((requests, primary, any_background))
     }
 }
