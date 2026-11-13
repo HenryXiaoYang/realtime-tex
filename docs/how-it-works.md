@@ -215,7 +215,7 @@ background path.
 | The engine thread; turning engine results into updates | `crates/rtex-core/src/session/engine_loop.rs`, `engine_server.rs`, `engine_results.rs` |
 | Background passes, standby engine | `crates/rtex-core/src/session/passes.rs`, `background/` (the pass loop in `mod.rs`, `snapshot.rs`, `auxfiles.rs`, `index.rs`, `standby.rs`) |
 | Layouts, placements | `crates/rtex-core/src/layout.rs` |
-| Picture cache | `crates/rtex-core/src/piccache.rs`, `tex/rtex-pic.lua` |
+| Picture cache | `crates/rtex-core/src/piccache/` (`scan.rs` finds pictures, `cacheable.rs` decides, `store.rs` keeps them), `tex/rtex-pic.lua` |
 | Live engine (Lua side) | `tex/rtex-serve.lua`, `tex/latex/rtex-serve-patches.tex` |
 | Node list → display list | `tex/rtex-dl.lua`, `tex/rtex-dl-bin.lua` |
 | Capture package | `tex/latex/rtex-capture.sty`, `tex/rtex-capture.lua` |
