@@ -107,33 +107,7 @@ pub(super) fn handle_result(
     wanted_gen: u64,
 ) {
     if let Some(msg) = cr.internal.as_deref() {
-        // the server hit a Lua error of its own on this unit and answered with it (it used to
-        // stay silent until the watchdog killed the engine): the unit waits for the pass until
-        // the next layout; the engine is fine
-        if req.warmup {
-            // nothing to demote, and no pass to schedule: a pass would install a layout, which
-            // warms the engine again, which would fail again (a loop of passes)
-            log::warn!("warm-up compile: internal error in the server: {msg}");
-            return;
-        }
-        let lv = s.layout.lock().layout_version;
-        let first = s
-            .live
-            .lock()
-            .unit(req.par_id)
-            .internal_error
-            .replace((lv, msg.to_string()))
-            .is_none_or(|(prev, _)| prev != lv);
-        log::warn!("{:?}: internal error in the server: {msg}", req.par_id);
-        // one bundle per unit and layout, not one per keystroke
-        if first {
-            if let Some(dir) =
-                debug_bundle(s, &req, &format!("internal error: {msg}"), wanted_gen, None)
-            {
-                log::warn!("debug bundle: {}", dir.display());
-            }
-        }
-        demote_span(s, &req, &format!("internal error ({})", first_line_of(msg)));
+        internal_error(s, &req, msg, wanted_gen);
         return;
     }
     if !cr.leaks.is_empty() {
@@ -148,22 +122,7 @@ pub(super) fn handle_result(
         return;
     }
     if s.cfg.debug_dir.is_some() {
-        debug_request_line(
-            s,
-            &format!(
-                "par {} ctx {} status {} rows {} tex_us {} total_us {} pics {}/{} errors {}{}",
-                req.par_id.0,
-                req.seq,
-                cr.status,
-                cr.dl.as_ref().map(|d| d.lines.len()).unwrap_or(0),
-                rt.t_tex.as_micros(),
-                t0.elapsed().as_micros(),
-                cr.pics_used.unwrap_or(0),
-                cr.pics_seen.unwrap_or(0),
-                cr.errors.len(),
-                if req.warmup { " (warm-up)" } else { "" }
-            ),
-        );
+        debug_result_line(s, &req, &cr, &rt, t0);
     }
     if req.warmup {
         return;
@@ -245,44 +204,24 @@ pub(super) fn handle_result(
             .ok();
         return;
     }
+    place_and_send(s, req, cr, diagnostics, timing);
+}
+
+/// A result with a display list: places its rows, records what the unit now is, asks for a
+/// pass when the result leaves the layout stale, and sends the `ParagraphUpdate`.
+fn place_and_send(
+    s: &Shared,
+    req: FastRequest,
+    cr: crate::engine::CompileResult,
+    diagnostics: Vec<Diagnostic>,
+    timing: Timing,
+) {
     let mut dl = cr.dl.unwrap();
     if !cr.images.is_empty() {
         dl.images = cr.images.clone();
     }
     let rows: Vec<(i64, i64)> = dl.lines.iter().map(|l| (l.x, l.y)).collect();
-    let (fragments, mut stale) = {
-        let layout = s.layout.lock();
-        match layout.fragments(req.par_id, &rows) {
-            Some(x) => x,
-            None => {
-                // a borrowed context: placed relative to the anchor's rows (a layout unit's
-                // placements, or the live placement of a unit on a borrowed context itself)
-                let derived = s.live.lock().get(req.par_id).and_then(|u| u.derived);
-                let frags = derived
-                    .and_then(|(parent, anchor, after)| {
-                        let placed = s.live.lock().get(anchor).and_then(|u| u.place);
-                        match placed.filter(|_| layout.unit(anchor).is_none()) {
-                            Some((page, x, last)) => {
-                                let bs = layout.unit(parent)?.baselineskip().max(1);
-                                Some(LayoutStore::fragments_at(page, x, last + bs, &rows))
-                            }
-                            None => {
-                                // a layout unit, or a chained unit not delivered (yet)
-                                let a = if layout.unit(anchor).is_some() {
-                                    anchor
-                                } else {
-                                    parent
-                                };
-                                let live = s.live.lock().get(a).and_then(|u| u.rows);
-                                layout.fragments_relative(a, live, after, &rows)
-                            }
-                        }
-                    })
-                    .unwrap_or_default();
-                (frags, true)
-            }
-        }
-    };
+    let (fragments, mut stale) = place_rows(s, &req, &rows);
     // a placement that lands off its page is a bad guess (a borrowed anchor on another page,
     // a unit grown past the page bottom, rows extrapolated above the top): drop it so the unit
     // waits for the pass instead of drawing its rows, pictures and all, at the page edge or
@@ -298,21 +237,7 @@ pub(super) fn handle_result(
         return;
     }
     if s.cfg.debug_dir.is_some() {
-        let f = fragments.first();
-        debug_request_line(
-            s,
-            &format!(
-                "par {} placed: rows {} fragments {} page {:?} x {:?} y {:?}..{:?} approximate {:?}",
-                req.par_id.0,
-                dl.lines.len(),
-                fragments.len(),
-                f.map(|f| f.page),
-                f.and_then(|f| f.xs.first().copied()),
-                f.and_then(|f| f.baselines.first().copied()),
-                fragments.last().and_then(|f| f.baselines.last().copied()),
-                f.map(|f| f.approximate),
-            ),
-        );
+        debug_placed_line(s, &req, &dl, &fragments);
     }
     {
         let mut live = s.live.lock();
@@ -375,6 +300,122 @@ pub(super) fn handle_result(
             timing,
         })
         .ok();
+    note_fast_budget(s, &req, total_us);
+}
+
+/// The server answered with a Lua error of its own: the unit waits for the pass.
+fn internal_error(s: &Shared, req: &FastRequest, msg: &str, wanted_gen: u64) {
+    // the server hit a Lua error of its own on this unit and answered with it (it used to
+    // stay silent until the watchdog killed the engine): the unit waits for the pass until
+    // the next layout; the engine is fine
+    if req.warmup {
+        // nothing to demote, and no pass to schedule: a pass would install a layout, which
+        // warms the engine again, which would fail again (a loop of passes)
+        log::warn!("warm-up compile: internal error in the server: {msg}");
+        return;
+    }
+    let lv = s.layout.lock().layout_version;
+    let first = s
+        .live
+        .lock()
+        .unit(req.par_id)
+        .internal_error
+        .replace((lv, msg.to_string()))
+        .is_none_or(|(prev, _)| prev != lv);
+    log::warn!("{:?}: internal error in the server: {msg}", req.par_id);
+    // one bundle per unit and layout, not one per keystroke
+    if first {
+        if let Some(dir) = debug_bundle(s, req, &format!("internal error: {msg}"), wanted_gen, None)
+        {
+            log::warn!("debug bundle: {}", dir.display());
+        }
+    }
+    demote_span(s, req, &format!("internal error ({})", first_line_of(msg)));
+}
+
+/// One line per live compile in the debug directory's requests.log.
+fn debug_result_line(
+    s: &Shared,
+    req: &FastRequest,
+    cr: &crate::engine::CompileResult,
+    rt: &crate::engine::RoundTrip,
+    t0: Instant,
+) {
+    debug_request_line(
+        s,
+        &format!(
+            "par {} ctx {} status {} rows {} tex_us {} total_us {} pics {}/{} errors {}{}",
+            req.par_id.0,
+            req.seq,
+            cr.status,
+            cr.dl.as_ref().map(|d| d.lines.len()).unwrap_or(0),
+            rt.t_tex.as_micros(),
+            t0.elapsed().as_micros(),
+            cr.pics_used.unwrap_or(0),
+            cr.pics_seen.unwrap_or(0),
+            cr.errors.len(),
+            if req.warmup { " (warm-up)" } else { "" }
+        ),
+    );
+}
+
+/// Where the unit's rows go: the layout's placement of the unit, or, for a unit on a borrowed
+/// context, a placement derived from its anchor (then stale until the next layout).
+fn place_rows(s: &Shared, req: &FastRequest, rows: &[(i64, i64)]) -> (Vec<Fragment>, bool) {
+    let layout = s.layout.lock();
+    match layout.fragments(req.par_id, rows) {
+        Some(x) => x,
+        None => {
+            // a borrowed context: placed relative to the anchor's rows (a layout unit's
+            // placements, or the live placement of a unit on a borrowed context itself)
+            let derived = s.live.lock().get(req.par_id).and_then(|u| u.derived);
+            let frags = derived
+                .and_then(|(parent, anchor, after)| {
+                    let placed = s.live.lock().get(anchor).and_then(|u| u.place);
+                    match placed.filter(|_| layout.unit(anchor).is_none()) {
+                        Some((page, x, last)) => {
+                            let bs = layout.unit(parent)?.baselineskip().max(1);
+                            Some(LayoutStore::fragments_at(page, x, last + bs, rows))
+                        }
+                        None => {
+                            // a layout unit, or a chained unit not delivered (yet)
+                            let a = if layout.unit(anchor).is_some() {
+                                anchor
+                            } else {
+                                parent
+                            };
+                            let live = s.live.lock().get(a).and_then(|u| u.rows);
+                            layout.fragments_relative(a, live, after, rows)
+                        }
+                    }
+                })
+                .unwrap_or_default();
+            (frags, true)
+        }
+    }
+}
+
+/// Where a live result was placed, for requests.log.
+fn debug_placed_line(s: &Shared, req: &FastRequest, dl: &DisplayList, fragments: &[Fragment]) {
+    let f = fragments.first();
+    debug_request_line(
+        s,
+        &format!(
+            "par {} placed: rows {} fragments {} page {:?} x {:?} y {:?}..{:?} approximate {:?}",
+            req.par_id.0,
+            dl.lines.len(),
+            fragments.len(),
+            f.map(|f| f.page),
+            f.and_then(|f| f.xs.first().copied()),
+            f.and_then(|f| f.baselines.first().copied()),
+            fragments.last().and_then(|f| f.baselines.last().copied()),
+            f.map(|f| f.approximate),
+        ),
+    );
+}
+
+/// Counts a compile against the unit's time budget.
+fn note_fast_budget(s: &Shared, req: &FastRequest, total_us: u64) {
     // fast budget: a unit whose compiles are too slow leaves the fast path until the next
     // layout. The first slow compiles of a unit are forgiven (font loading, cold caches); three
     // in a row mark the unit.
