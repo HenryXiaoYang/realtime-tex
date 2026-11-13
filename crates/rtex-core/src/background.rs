@@ -355,15 +355,23 @@ fn aux_signature(out_dir: &Path, jobname: &str) -> u64 {
     h.finish()
 }
 
-fn log_requests_rerun(log: &Path) -> bool {
-    std::fs::read_to_string(log)
-        .map(|s| {
-            s.contains("Rerun to get")
-                || s.contains("rerun LaTeX")
-                || s.contains("Please (re)run Biber")
-                || s.contains("Please rerun LaTeX")
-        })
-        .unwrap_or(false)
+/// Whether the log of a pass asks for another one. `bib_ran`: the bibliography program has
+/// run in this run, and runs once. biblatex's request for it ("Please (re)run Biber on the
+/// file: … and rerun LaTeX afterwards.") then stands for as long as the program cannot meet
+/// it (a citation the database lacks, a program that fails), and no further pass changes that.
+fn log_requests_rerun(log: &Path, bib_ran: bool) -> bool {
+    let Ok(mut s) = std::fs::read_to_string(log) else {
+        return false;
+    };
+    const BIB_REQUEST: &str = "Please (re)run Bib";
+    const BIB_REQUEST_END: &str = "rerun LaTeX afterwards";
+    while let Some(start) = s.find(BIB_REQUEST).filter(|_| bib_ran) {
+        let end = s[start..]
+            .find(BIB_REQUEST_END)
+            .map_or(BIB_REQUEST.len(), |e| e + BIB_REQUEST_END.len());
+        s.replace_range(start..start + end, "");
+    }
+    s.contains("Rerun to get") || s.contains("rerun LaTeX") || s.contains(BIB_REQUEST)
 }
 
 /// Run instrumented passes in `out_dir` until the aux family is stable or `max_passes` is hit.
@@ -585,7 +593,7 @@ pub fn run_pass_with_runner(
         let sig_after = aux_signature(out_dir, &jobname);
         // a bibliography run that changed nothing (same .bbl) needs no extra pass: the .bbl is
         // part of the signature
-        let rerun = log_requests_rerun(&cap.log) || sig_after != sig_before;
+        let rerun = log_requests_rerun(&cap.log, bib_ran) || sig_after != sig_before;
         sig_before = sig_after;
         if rerun && passes < max_passes {
             // another pass follows: the caller may show this one meanwhile

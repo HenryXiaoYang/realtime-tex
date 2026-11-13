@@ -105,6 +105,36 @@ fn biblatex_citations_are_live_in_a_session_opened_without_a_build() {
 }
 
 #[test]
+fn a_citation_the_database_lacks_does_not_cost_extra_passes() {
+    // biblatex keeps asking for BibTeX while a key is unresolved (a citation being typed):
+    // BibTeX has run and no further pass can change that
+    let main = "\\documentclass{article}\n\\usepackage[backend=bibtex]{biblatex}\n\
+                \\addbibresource{refs.bib}\n\\begin{document}\n\
+                First paragraph cites a missing book~\\cite{knuth1986} in running text.\n\n\
+                A second paragraph without citations.\n\\printbibliography\n\\end{document}\n";
+    let Some((s, project, _)) = session("missing-key", &[("main.tex", main), ("refs.bib", BIB)])
+    else {
+        return;
+    };
+    let run = |s: &Session| match wait_converged(s) {
+        Event::LayoutUpdate {
+            convergence,
+            passes,
+            ..
+        } => (convergence, passes),
+        _ => unreachable!(),
+    };
+    let (convergence, passes) = run(&s);
+    assert_eq!(convergence, Convergence::Converged);
+    assert!(passes <= 3, "first layout took {passes} passes");
+    insert_after(&s, &project, "A second paragraph", " with more words");
+    s.request_layout();
+    let (convergence, passes) = run(&s);
+    assert_eq!(convergence, Convergence::Converged);
+    assert_eq!(passes, 1, "a layout after an edit");
+}
+
+#[test]
 fn makeindex_runs_between_passes() {
     // makeindex with no file reads stdin (empty here) and writes stdout
     let have_makeindex = std::process::Command::new("makeindex")

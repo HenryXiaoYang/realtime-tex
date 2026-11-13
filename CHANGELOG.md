@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed
+
+- `DisplayList::to_binary` (what the C API hands to hosts) dropped the item after every
+  transformation: the `set` after a `save`, so a scaled or rotated box was drawn untransformed,
+  and the item after a `restore`. `rtex serve` sends JSON and was not affected.
+- A main file in a subfolder reads `\input{name}` (and other files found by name) from its
+  own folder even when a same-named file sits at the top of the project, as `latexmk -cd`
+  does (#40).
+- The live preview no longer draws another graphic of the document in place of an
+  `\includegraphics` image that comes after cached pictures: `images_info` is keyed by the
+  image rule index the IMAGE items carry, not the PDF object number (#41, by SunXin121).
+
 ### Faster
 
 - Background passes: the capture writes each page's display list in the binary format, as
@@ -15,19 +27,14 @@
   `encodingbytes`. A line's glue set `gs` is LuaTeX's exact value (the JSON round trip could
   change its last digit), and a page lists the images known when it shipped, not every image
   of the document. `PageUpdate.hash` is the hash of the page's bytes.
-
-### Fixed
-
-- `DisplayList::to_binary` (what the C API hands to hosts) dropped the item after every
-  transformation: the `set` after a `save`, so a scaled or rotated box was drawn untransformed,
-  and the item after a `restore`. `rtex serve` sends JSON and was not affected.
-
-- A main file in a subfolder reads `\input{name}` (and other files found by name) from its
-  own folder even when a same-named file sits at the top of the project, as `latexmk -cd`
-  does (#40).
-- The live preview no longer draws another graphic of the document in place of an
-  `\includegraphics` image that comes after cached pictures: `images_info` is keyed by the
-  image rule index the IMAGE items carry, not the PDF object number (#41, by SunXin121).
+- A bibliography request that cannot be met no longer costs every layout five passes. While
+  a citation's key is missing from the database (a `\cite` being typed, with biblatex's
+  BibTeX backend), or while Biber or BibTeX fails, biblatex writes "Please (re)run Biber …
+  and rerun LaTeX afterwards" on every pass. rtex took that as a reason to run again, up to
+  the pass limit, and reported `PassLimitReached` with "aux family still changing" although
+  nothing changed. The bibliography program runs once per run, so after it has run that
+  request no longer starts a pass. A layout after an edit is then one pass: 1.9–2.1 s
+  instead of 8.9–11.1 s on the 100-page mixed book with a Biber that fails.
 
 ## 0.0.7 (2026-11-06)
 
