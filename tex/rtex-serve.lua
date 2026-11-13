@@ -268,7 +268,7 @@ local function uncommented(line)
   end
 end
 
--- The vertical material a unit may start with (eligibility.rs vertical_prefix_len): where the
+-- The vertical material a unit may start with (eligibility/shape.rs vertical_prefix_len): where the
 -- command at p and its {argument} end, or nil.
 local VERTICAL = { "vspace%*", "vspace", "noindent", "newpage", "clearpage", "pagebreak",
                    "smallskip", "medskip", "bigskip", "vfill", "centering" }

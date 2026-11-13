@@ -530,7 +530,7 @@ fn segment_body(
         let heading = HEADING_CMDS.iter().any(|h| stripped.starts_with(h));
         // a picture environment opened while a paragraph is open (text before it in this span
         // or on its line) is an inline box of that paragraph, as the capture sees it (no unit
-        // of its own); the same rule as eligibility.rs (content_start before the \begin)
+        // of its own); the same rule as eligibility/shape.rs (content_start before the \begin)
         let inline_picture = begins.iter().any(|b| PICTURE_ENVS.contains(&b.as_str())) && {
             let k = PICTURE_ENVS
                 .iter()

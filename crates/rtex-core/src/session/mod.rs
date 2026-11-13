@@ -101,7 +101,7 @@ enum ProbeVerdict {
 /// How the session decides that a unit may be typeset live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EligibilityMode {
-    /// Only units whose every command is on the allow-list (`eligibility.rs`).
+    /// Only units whose every command is on the allow-list (`eligibility/`).
     AllowList,
     /// Any structurally sound unit: one whose vocabulary is not allow-listed is probed first —
     /// its text as the last pass typeset it is compiled once and compared row by row with the
