@@ -2,7 +2,25 @@
 
 ## Unreleased
 
+### Faster
+
+- Background passes: the capture writes each page's display list in the binary format, as
+  the page ships, instead of building a table per page and encoding all of them as JSON at
+  the end of the run. On the 300-page TFM book the page lists take 0.25 s of a pass instead
+  of 0.98 s (12.5 MB instead of 36 MB), and a later layout after a one-character edit takes
+  1.6 s instead of 2.4 s (Apple M5 Pro, median of three sessions of five layouts each). The
+  pass directory holds `<jobname>.rtex-page<n>.bin` in place of `.rtex-page<n>.json`;
+  `rtex dl2json` prints one as JSON. Page lists now carry what the binary format documents:
+  a flag's `<reason>_detail` is `1` instead of a string, and fonts have no `embedding` or
+  `encodingbytes`. A line's glue set `gs` is LuaTeX's exact value (the JSON round trip could
+  change its last digit), and a page lists the images known when it shipped, not every image
+  of the document. `PageUpdate.hash` is the hash of the page's bytes.
+
 ### Fixed
+
+- `DisplayList::to_binary` (what the C API hands to hosts) dropped the item after every
+  transformation: the `set` after a `save`, so a scaled or rotated box was drawn untransformed,
+  and the item after a `restore`. `rtex serve` sends JSON and was not affected.
 
 - A main file in a subfolder reads `\input{name}` (and other files found by name) from its
   own folder even when a same-named file sits at the top of the project, as `latexmk -cd`

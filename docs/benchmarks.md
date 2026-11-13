@@ -105,13 +105,18 @@ pass. It runs in the standby engine, which already has the preamble loaded. "Cle
 full PDF build without the capture package, with as many passes as the document needs (2 or 3
 here). Each figure is the median of two runs.
 
-**What makes passes slow.** For long documents, the capture package is the main cost. It writes
-a display list for every page, as JSON: about 120 KB per page, 14 MB for the 100-page book. On
-the 100-page book, encoding that JSON takes 0.45 s of a 2.1 s LuaLaTeX run (1.25 s before the
-encoder was rewritten), and the host parses only the pages whose JSON changed. Measured on the
-same VM against 0.0.6, a later layout of the 300-page book takes 4.8 s instead of 7.6 s and the
-first one 10.1 s instead of 16.4 s. The next step would be binary page lists, written only for
-pages that changed.
+**What makes passes slow.** For long documents, the capture package was the main cost. In the
+runs above it wrote a display list for every page as JSON: about 120 KB per page, 14 MB for the
+100-page book. On the 100-page book, encoding that JSON took 0.45 s of a 2.1 s LuaLaTeX run
+(1.25 s before the encoder was rewritten), and the host parsed only the pages whose JSON
+changed. Measured on the same VM against 0.0.6, a later layout of the 300-page book took 4.8 s
+instead of 7.6 s and the first one 10.1 s instead of 16.4 s.
+
+Since then the capture writes each page in the binary format as it ships, and the figures in
+the table above predate that. On an Apple M5 Pro (2026-11-13), a pass over the 300-page TFM book
+spends 1.17 s in LuaLaTeX itself and 0.25 s on the page lists, where the JSON took 0.98 s; a
+later layout takes 1.6 s instead of 2.4 s. What is left above plain LuaLaTeX is the page walk,
+the units and paragraphs file (0.14 s) and the per-paragraph bookkeeping.
 
 For short documents the standby engine helps most. Starting LuaLaTeX and loading the preamble
 is most of a short run, so a later layout of the 10-page book takes 0.2 s, against 0.9 s for

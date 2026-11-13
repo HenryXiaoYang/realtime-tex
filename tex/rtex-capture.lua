@@ -6,7 +6,7 @@
 -- center, floats, theorem-like environments) or a sectioning command (kind "heading"). Every
 -- node created while a unit is open carries the `rtex_unit` attribute, so at shipout the unit's
 -- rows (hlists reached through vlists only) are found wherever the page builder put them.
-local C = { seq = 0, stack = {}, begins = {}, paras = {}, pages = {}, page = 0, units = {}, uid = 0, cur = nil, env_depth = 0 }
+local C = { seq = 0, stack = {}, begins = {}, paras = {}, page = 0, units = {}, uid = 0, cur = nil, env_depth = 0 }
 local json = dofile(kpse.find_file("rtex-json.lua", "lua") or "rtex-json.lua")
 local dl = dofile(kpse.find_file("rtex-dl.lua", "lua") or "rtex-dl.lua")
 -- picture cache mechanics shared with the live server (rtex-pic.lua, rtex-pic.tex)
@@ -628,51 +628,50 @@ function C.pic_write() P.write(C.picctl, C.cache_images) end
 -- shipout/before: the page attributes in force for the page about to ship.
 function C.page_attr(s) C.next_page_attr = s end
 
--- pre_shipout_filter: `b` is the page box as shipped.
+local function out_path(name)
+  local dir = os.getenv("RTEX_CAPTURE_DIR") or os.getenv("TEXMF_OUTPUT_DIRECTORY") or "."
+  return dir .. "/" .. name
+end
+
+-- A unit line found on the page being shipped: its placement, and its row within the unit.
+local function place_row(unit, par, line, x, y, w, h, d)
+  local u = C.units[unit]
+  if not u then return 0 end
+  local pl = u.placements
+  local row = #pl + 1
+  pl[row] = { page = C.page, row = row, x = x, y = y, w = w, h = h, d = d, par = par, line = line }
+  return row
+end
+
+-- pre_shipout_filter: `b` is the page box as shipped. Its display list goes to
+-- <jobname>.rtex-page<n>.bin at once (binary page list, docs/display-list.md).
 function C.shipout(b)
   C.page = C.page + 1
   local attr = C.next_page_attr or ""
   C.next_page_attr = nil
   if not b then return end
-  local page = dl.page(b, C.attr_par, C.attr_line, C.page, nil, C.attr_unit, is_insert,
-                       { attr_pic = C.attr_pic, pic_images = C.cache_images })
   -- a /Rotate page attribute (pdflscape) turns the page in the viewer: the display list
   -- draws it unturned, so hosts take the page from the PDF
   local rot = tonumber(attr:match("/Rotate%s*(%-?%d+)") or "0") or 0
-  if rot % 360 ~= 0 then
-    page.flags.page_rotate = 1
-    page.flags.page_rotate_detail = rot
-  end
-  for _, pc in ipairs(page.pics or {}) do
+  local flags = rot % 360 ~= 0 and { page_rotate = 1, page_rotate_detail = rot } or nil
+  local bytes, pics, page_height = dl.page_binary(b, C.attr_par, C.attr_line, C.page,
+    { attr_unit = C.attr_unit, is_insert = is_insert, attr_pic = C.attr_pic, pic_images = C.cache_images,
+      row_of = place_row, flags = flags, images = C.images })
+  for _, pc in ipairs(pics) do
     local k = C.pic_keys[pc.id]
     -- one box per picture (several boxes on one baseline are joined); a picture broken over
     -- lines or pages is not recorded (never cached)
     if k and not pc.multi and not C.pics[k.key] and not C.pic_bad[k.key] then
       C.pics[k.key] = { env = k.env, page = C.page, x = pc.x, y = pc.y, w = pc.w, h = pc.h, d = pc.d,
-                        page_height = page.page_height, state = k.state }
+                        page_height = page_height, state = k.state }
     elseif k and (pc.multi or C.pics[k.key]) then
       C.pics[k.key] = nil
       C.pic_bad[k.key] = true
     end
   end
-  page.pics = nil
-  if next(C.images) then page.images_info = C.images end
-  C.pages[#C.pages + 1] = page
-  for _, line in ipairs(page.lines) do
-    local u = line.unit and C.units[line.unit]
-    if u then
-      local pl = u.placements
-      local row = #pl + 1
-      line.row = row
-      pl[row] = { page = C.page, row = row, x = line.x, y = line.y, w = line.w, h = line.h, d = line.d,
-                  par = line.par, line = line.i }
-    end
-  end
-end
-
-local function out_path(name)
-  local dir = os.getenv("RTEX_CAPTURE_DIR") or os.getenv("TEXMF_OUTPUT_DIRECTORY") or "."
-  return dir .. "/" .. name
+  local pf = assert(io.open(out_path(string.format("%s.rtex-page%d.bin", C.jobname, C.page)), "wb"))
+  pf:write(bytes)
+  pf:close()
 end
 
 -- imakeidx's index commands (`makeindex -s style.ist main.idx`, `texindy ... main.idx`), one
@@ -711,13 +710,6 @@ function C.finish()
   if not f then error("rtex-capture: cannot write " .. path .. ": " .. tostring(err)) end
   f:write(json.encode(out))
   f:close()
-  local math_owner = package.loaded["rtex-math"]
-  for i, page in ipairs(C.pages) do
-    if page.math_owners and math_owner then page.math_owners = math_owner.to_table(page.math_owners) end
-    local pf = assert(io.open(out_path(string.format("%s.rtex-page%d.json", C.jobname, i)), "w"))
-    pf:write(json.encode(page))
-    pf:close()
-  end
   texio.write_nl("term and log", string.format("rtex-capture: %d paragraphs, %d units, %d pages written", #paras, #C.units, C.page))
 end
 

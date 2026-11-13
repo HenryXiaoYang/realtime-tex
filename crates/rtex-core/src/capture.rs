@@ -257,14 +257,14 @@ pub struct CaptureResult {
 
 impl CaptureResult {
     pub fn page(&self, n: i64) -> Result<DisplayList> {
-        Ok(DisplayList::from_json(&self.page_json(n)?)?)
+        Ok(DisplayList::from_binary(&self.page_bytes(n)?)?)
     }
-    /// The capture's JSON text of page `n`.
-    pub fn page_json(&self, n: i64) -> Result<String> {
+    /// The capture's binary display list of page `n`.
+    pub fn page_bytes(&self, n: i64) -> Result<Vec<u8>> {
         let p = self
             .out_dir
-            .join(format!("{}.rtex-page{}.json", self.jobname, n));
-        std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))
+            .join(format!("{}.rtex-page{}.bin", self.jobname, n));
+        std::fs::read(&p).with_context(|| format!("reading {}", p.display()))
     }
     pub fn paragraph(&self, seq: i64) -> Option<&CapturedParagraph> {
         self.json.paragraphs.iter().find(|p| p.seq == seq)
