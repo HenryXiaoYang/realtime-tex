@@ -213,7 +213,7 @@ background path.
 | Live or background, borrowed contexts | `crates/rtex-core/src/session/route.rs`, `eligibility/` (entry points in `mod.rs`, the scanner in `scan*.rs`, the allow-lists in `vocab_*.rs`) |
 | The live engine process and its channel | `crates/rtex-core/src/engine.rs`, `transport.rs` |
 | The engine thread; turning engine results into updates | `crates/rtex-core/src/session/engine_loop.rs`, `engine_server.rs`, `engine_results.rs` |
-| Background passes, standby engine | `crates/rtex-core/src/session/passes.rs`, `background/` (the pass loop in `mod.rs`, `snapshot.rs`, `auxfiles.rs`, `index.rs`, `standby.rs`) |
+| Background passes, standby engine | `crates/rtex-core/src/session/passes.rs`, `pass_standby.rs`, `pass_deliver.rs`, `export.rs`, `background/` (the pass loop in `mod.rs`, `snapshot.rs`, `auxfiles.rs`, `index.rs`, `standby.rs`) |
 | Layouts, placements | `crates/rtex-core/src/layout.rs` |
 | Picture cache | `crates/rtex-core/src/piccache/` (`scan.rs` finds pictures, `cacheable.rs` decides, `store.rs` keeps them), `tex/rtex-pic.lua` |
 | Live engine (Lua side) | `tex/rtex-serve.lua`, `tex/latex/rtex-serve-patches.tex` |

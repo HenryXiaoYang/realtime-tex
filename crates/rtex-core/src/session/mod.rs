@@ -6,7 +6,8 @@
 //! - `engine_loop`: the thread that owns the live engine, with `engine_server` (its
 //!   lifecycle) and `engine_results` (results into updates); `live`: what is known about
 //!   each unit between layouts.
-//! - `passes`: the background thread: passes, layouts, exports.
+//! - `passes`: the background thread, with `pass_standby` (pass directories, the standby
+//!   engine), `pass_deliver` (a pass into a layout) and `export`.
 //! - `state`: what those threads share; `diag`: diagnostics from logs.
 
 use crate::background::{
@@ -38,7 +39,10 @@ mod engine_loop;
 mod engine_results;
 mod engine_server;
 mod events;
+mod export;
 mod live;
+mod pass_deliver;
+mod pass_standby;
 mod passes;
 mod route;
 mod state;
@@ -50,7 +54,10 @@ use engine_loop::*;
 use engine_results::*;
 use engine_server::*;
 pub use events::*;
+use export::*;
 use live::*;
+use pass_deliver::*;
+use pass_standby::*;
 use passes::*;
 use state::*;
 
