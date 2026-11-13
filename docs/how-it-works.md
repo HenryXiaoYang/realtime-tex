@@ -212,7 +212,7 @@ background path.
 | Splitting files into spans | `crates/rtex-core/src/document/` (types in `mod.rs`, `segment.rs`, `buffer.rs` for edits in place, `inputs.rs` for `\input`) |
 | Live or background, borrowed contexts | `crates/rtex-core/src/session/route.rs`, `eligibility/` (entry points in `mod.rs`, the scanner in `scan*.rs`, the allow-lists in `vocab_*.rs`) |
 | The live engine process and its channel | `crates/rtex-core/src/engine.rs`, `transport.rs` |
-| Turning engine results into updates | `crates/rtex-core/src/session/engine_loop.rs` |
+| The engine thread; turning engine results into updates | `crates/rtex-core/src/session/engine_loop.rs`, `engine_server.rs`, `engine_results.rs` |
 | Background passes, standby engine | `crates/rtex-core/src/session/passes.rs`, `background/` (the pass loop in `mod.rs`, `snapshot.rs`, `auxfiles.rs`, `index.rs`, `standby.rs`) |
 | Layouts, placements | `crates/rtex-core/src/layout.rs` |
 | Picture cache | `crates/rtex-core/src/piccache.rs`, `tex/rtex-pic.lua` |

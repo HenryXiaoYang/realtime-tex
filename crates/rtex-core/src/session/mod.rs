@@ -3,8 +3,9 @@
 //! `Session` is opened, queried and polled here. Its parts:
 //! - `config`: what a host configures; `events`: what it is told.
 //! - `edit`: applying an edit and routing the touched units (`route` decides live or background).
-//! - `engine_loop`: the thread that owns the live engine; `live`: what is known about each
-//!   unit between layouts.
+//! - `engine_loop`: the thread that owns the live engine, with `engine_server` (its
+//!   lifecycle) and `engine_results` (results into updates); `live`: what is known about
+//!   each unit between layouts.
 //! - `passes`: the background thread: passes, layouts, exports.
 //! - `state`: what those threads share; `diag`: diagnostics from logs.
 
@@ -34,6 +35,8 @@ mod config;
 mod diag;
 mod edit;
 mod engine_loop;
+mod engine_results;
+mod engine_server;
 mod events;
 mod live;
 mod passes;
@@ -44,6 +47,8 @@ pub use config::*;
 pub use diag::parse_log;
 use diag::*;
 use engine_loop::*;
+use engine_results::*;
+use engine_server::*;
 pub use events::*;
 use live::*;
 use passes::*;
