@@ -355,8 +355,29 @@ fn aux_signature(out_dir: &Path, jobname: &str) -> u64 {
     h.finish()
 }
 
+/// What the bibliography program reads from a pass: Biber's control file, BibTeX's lines of
+/// the aux file. The program runs again only when this changes.
+fn bib_input(out_dir: &Path, jobname: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let forms = dir_forms(out_dir);
+    if let Ok(b) = std::fs::read(out_dir.join(format!("{jobname}.bcf"))) {
+        without_dir(&b, &forms).hash(&mut h);
+    }
+    if let Ok(aux) = std::fs::read_to_string(out_dir.join(format!("{jobname}.aux"))) {
+        for line in aux.lines().filter(|l| {
+            ["\\citation", "\\bibdata", "\\bibstyle"]
+                .iter()
+                .any(|c| l.starts_with(c))
+        }) {
+            line.hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
 /// Whether the log of a pass asks for another one. `bib_ran`: the bibliography program has
-/// run in this run, and runs once. biblatex's request for it ("Please (re)run Biber on the
+/// run on what this pass gave it. biblatex's request for it ("Please (re)run Biber on the
 /// file: … and rerun LaTeX afterwards.") then stands for as long as the program cannot meet
 /// it (a citation the database lacks, a program that fails), and no further pass changes that.
 fn log_requests_rerun(log: &Path, bib_ran: bool) -> bool {
@@ -532,7 +553,8 @@ pub fn run_pass_with_runner(
         .unwrap_or("main")
         .to_string();
     let mut sig_before = aux_signature(aux_dir, &jobname);
-    let mut bib_ran = false;
+    // what the bibliography program last ran on (`bib_input`)
+    let mut bib_ran_on = None;
     let mut indexed = BTreeMap::new();
     let mut last: Option<CaptureResult> = None;
     let mut passes = 0;
@@ -557,7 +579,9 @@ pub fn run_pass_with_runner(
                         .unwrap_or(false)
             }
         };
-        if wants_bib && !bib_ran {
+        let bib_now = wants_bib.then(|| bib_input(out_dir, &jobname));
+        // again when a pass cites more (an entry whose note cites another entry)
+        if wants_bib && bib_ran_on != bib_now {
             let tool = if bcf.exists() { "biber" } else { "bibtex" };
             let mut cmd = Command::new(tool);
             // in the main file's folder, as `latexmk -cd` runs it: a document-relative database
@@ -576,24 +600,26 @@ pub fn run_pass_with_runner(
             if let Some(d) = &tl.bin_dir {
                 crate::paths::prepend_bin_dir(&mut cmd, d);
             }
-            // .bib and .bst files at the top of the snapshot
+            // .bib and .bst files at the top of the snapshot; biblatex's BibTeX backend
+            // writes its control database (<jobname>-blx.bib) next to the aux file
             let search = format!(
-                "{}{}",
+                "{}{sep}{}{sep}",
                 crate::paths::tex(snapshot_dir),
-                crate::paths::SEARCH_SEP
+                crate::paths::tex(out_dir),
+                sep = crate::paths::SEARCH_SEP
             );
             cmd.env("BIBINPUTS", &search).env("BSTINPUTS", &search);
             let out = cmd.output().with_context(|| format!("running {tool}"))?;
             if !out.status.success() {
                 log::warn!("{tool} failed: {}", String::from_utf8_lossy(&out.stderr));
             }
-            bib_ran = true;
+            bib_ran_on = bib_now;
         }
         run_makeindex(tl, snapshot_dir, out_dir, &jobname, &mut indexed);
         let sig_after = aux_signature(out_dir, &jobname);
         // a bibliography run that changed nothing (same .bbl) needs no extra pass: the .bbl is
         // part of the signature
-        let rerun = log_requests_rerun(&cap.log, bib_ran) || sig_after != sig_before;
+        let rerun = log_requests_rerun(&cap.log, bib_ran_on.is_some()) || sig_after != sig_before;
         sig_before = sig_after;
         if rerun && passes < max_passes {
             // another pass follows: the caller may show this one meanwhile
@@ -608,7 +634,7 @@ pub fn run_pass_with_runner(
     Ok(PassOutcome {
         capture: last.unwrap(),
         passes,
-        bib_ran,
+        bib_ran: bib_ran_on.is_some(),
         aux_stable: stable,
     })
 }
