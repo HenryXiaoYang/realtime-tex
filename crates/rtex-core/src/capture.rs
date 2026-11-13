@@ -257,14 +257,14 @@ pub struct CaptureResult {
 
 impl CaptureResult {
     pub fn page(&self, n: i64) -> Result<DisplayList> {
-        Ok(DisplayList::from_json(&self.page_json(n)?)?)
+        Ok(DisplayList::from_binary(&self.page_bytes(n)?)?)
     }
-    /// The capture's JSON text of page `n`.
-    pub fn page_json(&self, n: i64) -> Result<String> {
+    /// The capture's binary display list of page `n`.
+    pub fn page_bytes(&self, n: i64) -> Result<Vec<u8>> {
         let p = self
             .out_dir
-            .join(format!("{}.rtex-page{}.json", self.jobname, n));
-        std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))
+            .join(format!("{}.rtex-page{}.bin", self.jobname, n));
+        std::fs::read(&p).with_context(|| format!("reading {}", p.display()))
     }
     pub fn paragraph(&self, seq: i64) -> Option<&CapturedParagraph> {
         self.json.paragraphs.iter().find(|p| p.seq == seq)
@@ -375,6 +375,13 @@ pub fn capture_command(
         .to_string();
     // a run that ends in the preamble (\stop) writes no capture: never collect the last one's
     let _ = std::fs::remove_file(out_dir.join(format!("{jobname}.rtex.json")));
+    // nor a page of the pass that ran here before, should this run fail to write one
+    let page_prefix = format!("{jobname}.rtex-page");
+    for e in std::fs::read_dir(&out_dir)?.flatten() {
+        if e.file_name().to_string_lossy().starts_with(&page_prefix) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     let mut cmd = tl.lualatex_cmd(src_dir);
     cmd.arg("-interaction=nonstopmode")
         .arg("-file-line-error")

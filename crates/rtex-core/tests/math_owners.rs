@@ -605,12 +605,8 @@ fn unset_matches_baseline_display_lists() {
     let old = run_capture(&tl, &project, "main.tex", &root.join("baseline"), true).unwrap();
     assert!(old.exit_ok);
     assert_eq!(
-        std::fs::read(current.out_dir.join("main.rtex-page1.json")).unwrap(),
-        std::fs::read(old.out_dir.join("main.rtex-page1.json")).unwrap()
-    );
-    assert_eq!(
-        current.page(1).unwrap().to_binary(),
-        old.page(1).unwrap().to_binary()
+        std::fs::read(current.out_dir.join("main.rtex-page1.bin")).unwrap(),
+        std::fs::read(old.out_dir.join("main.rtex-page1.bin")).unwrap()
     );
     let mut server =
         FastServer::spawn(&tl, &project, &root.join("serve-old"), &preamble, 1, None).unwrap();

@@ -252,7 +252,12 @@ end
 
 local function bstr(s)
   s = tostring(s or "")
-  if #s > 65535 then s = s:sub(1, 65535) end
+  if #s > 65535 then
+    -- cut before a character, not inside one: the reader rejects invalid UTF-8
+    local n = 65535
+    while n > 0 and s:byte(n + 1) & 0xC0 == 0x80 do n = n - 1 end
+    s = s:sub(1, n)
+  end
   return pack("<s2", s)
 end
 
@@ -825,7 +830,10 @@ function State:begin_line(n, par, line, x, baseline, w, h, d, unit)
     self.cur = true
     self:bin_rec(0x10, pack("<i4i4i4i4i4i4i4dBB", par or 0, line or 0, x, baseline, w, h, d, gs or 0.0,
       getfield(n, "glue_sign") or 0, getfield(n, "glue_order") or 0))
-    if unit then self:bin_rec(0x12, pack("<i4i4", unit, 0)) end
+    if unit then
+      local row_of = self.opts.row_of
+      self:bin_rec(0x12, pack("<i4i4", unit, row_of and row_of(unit, par, line, x, baseline, w, h, d) or 0))
+    end
     return
   end
   self.cur = { par = par, i = line, x = x, y = baseline, w = w, h = h, d = d, unit = unit,
@@ -859,24 +867,14 @@ local function font_kind(d)
   return 0
 end
 
--- Paragraph box straight to binary display-list bytes (encoding revision 1). Same traversal as
--- M.paragraph; records are written as they are produced, META/FONT/FLAG records last.
--- Returns bytes, line count, glyph count, width, height, depth, flags table.
--- `extra_inserts`: inserts the box cannot hold (margin notes refused in a box), counted in META.
-function M.paragraph_binary(boxnode, initial_color, extra_inserts)
-  local box = todirect(boxnode)
-  local st = new_state({ lines_at_top = true })
-  st.bin = true
-  st.buf = {}
-  st.rn = 0
-  st.nlines = 0
-  if initial_color and initial_color ~= "" then st:emit({ "c", 0, 0, initial_color }) end
-  local w, h, d = getwhd(box)
-  vlist_out(st, box, 0, 0)
-  st.inserts = st.inserts + (extra_inserts or 0)
+-- The rest of a binary list whose item records are in st.buf: META (`m4`..`m8` are its page
+-- number, page width, page height and origin slots), FONT, FLAG, IMAGE_INFO and math owner
+-- records, the end record and the header. Fonts, flags and images go out in key order, so the
+-- same content always gives the same bytes (the session compares pages by their bytes).
+local function finish_binary(st, page_bit, w, h, d, m4, m5, m6, m7, m8, images)
   st:bin_flush_run()
   local buf = st.buf
-  buf[#buf + 1] = pack("<Bs4", 0x01, pack("<i4i4i4i4i4i4i4i4I4I4", w, h, d, 0, 0, 0, 0, st.inserts, st.glyphs, st.images))
+  buf[#buf + 1] = pack("<Bs4", 0x01, pack("<i4i4i4i4i4i4i4i4I4I4", w, h, d, m4, m5, m6, m7, m8, st.glyphs, st.images))
   local ids = {}
   for id in pairs(st.fonts) do ids[#ids + 1] = id end
   table.sort(ids)
@@ -886,22 +884,51 @@ function M.paragraph_binary(boxnode, initial_color, extra_inserts)
       fd.subfont or 0, floor((fd.slant or 0) + 0.5), floor((fd.extend or 0) + 0.5), floor((fd.squeeze or 0) + 0.5),
       floor((fd.designsize or 0) + 0.5)) .. bstr(fd.filename) .. bstr(fd.psname) .. bstr(fd.name) .. bstr(fd.fullname) .. bstr(fd.format))
   end
-  for k, v in pairs(st.flags) do
+  local keys = {}
+  for k in pairs(st.flags) do keys[#keys + 1] = k end
+  table.sort(keys)
+  for _, k in ipairs(keys) do
+    local v = st.flags[k]
     buf[#buf + 1] = pack("<Bs4", 0x03, bstr(k) .. pack("<i4", type(v) == "number" and floor(v) or 1))
+  end
+  if images then
+    local idx = {}
+    for _, im in pairs(images) do idx[#idx + 1] = im end
+    table.sort(idx, function(a, b) return a.index < b.index end)
+    for _, im in ipairs(idx) do
+      buf[#buf + 1] = pack("<Bs4", 0x27, pack("<I4I4I4", im.index, im.page or 0, tonumber(im.pages) or 0) .. bstr(im.file))
+    end
   end
   if st.math_owners then buf[#buf + 1] = pack("<Bs4", 0x29, math_owner.encode(st.math_owners)) end
   buf[#buf + 1] = pack("<Bs4", 0xFF, "")
   local body = concat(buf)
-  return pack("<c4I2I2I4I4", "RTDL", 1, 0, 16 + #body, 0) .. body, st.nlines, st.glyphs, w, h, d, st.flags, st.inserts
+  return pack("<c4I2I2I4I4", "RTDL", 1, page_bit, 16 + #body, 0) .. body
+end
+
+local function new_state_bin(opts)
+  local st = new_state(opts)
+  st.bin = true; st.buf = {}; st.rn = 0; st.nlines = 0
+  return st
+end
+
+-- Paragraph box straight to binary display-list bytes (encoding revision 1). Same traversal as
+-- M.paragraph; records are written as they are produced, META/FONT/FLAG records last.
+-- Returns bytes, line count, glyph count, width, height, depth, flags table.
+-- `extra_inserts`: inserts the box cannot hold (margin notes refused in a box), counted in META.
+function M.paragraph_binary(boxnode, initial_color, extra_inserts)
+  local box = todirect(boxnode)
+  local st = new_state_bin({ lines_at_top = true })
+  if initial_color and initial_color ~= "" then st:emit({ "c", 0, 0, initial_color }) end
+  local w, h, d = getwhd(box)
+  vlist_out(st, box, 0, 0)
+  st.inserts = st.inserts + (extra_inserts or 0)
+  local bytes = finish_binary(st, 0, w, h, d, 0, 0, 0, 0, st.inserts)
+  return bytes, st.nlines, st.glyphs, w, h, d, st.flags, st.inserts
 end
 
 -- Internals exposed for profiling (rtex-serve.lua `profile` op).
 M._hlist_out = function(st, box, left, base_v) return hlist_out(st, box, left, base_v) end
-M._new_state_bin = function()
-  local st = new_state({ lines_at_top = true })
-  st.bin = true; st.buf = {}; st.rn = 0; st.nlines = 0
-  return st
-end
+M._new_state_bin = function() return new_state_bin({ lines_at_top = true }) end
 
 -- Paragraph box (a \vbox whose top-level hlists are the lines). Origin: top-left of the box.
 -- `initial_color` (raw PDF color operators) is the color in force when the paragraph starts.
@@ -914,20 +941,24 @@ function M.paragraph(boxnode, initial_color)
   return result(st, "paragraph", { width = w, height = h, depth = d })
 end
 
--- Shipped page box. `attr_par`/`attr_line` identify tagged lines. Origin: page top-left;
--- the box is offset by (1in + \hoffset, 1in + \voffset) like the PDF backend does.
-function M.page(boxnode, attr_par, attr_line, page_no, glyph_attr, attr_unit, is_insert, extra)
+-- Shipped page box straight to binary display-list bytes (a page list). `attr_par`/`attr_line`
+-- identify tagged lines. Origin: page top-left; the box is offset by (1in + \hoffset,
+-- 1in + \voffset) like the PDF backend does. `opts`: the traversal options (`attr_unit`,
+-- `is_insert`, `attr_pic`, `pic_images`), `row_of(unit, par, line, x, y, w, h, d)` giving a
+-- unit line's row, `flags` to add to the page's own, and `images` (IMAGE_INFO records).
+-- Returns bytes, the pictures seen (`note_pic`) and the page height.
+function M.page_binary(boxnode, attr_par, attr_line, page_no, opts)
   local box = todirect(boxnode)
-  local st = new_state({ attr_par = attr_par, attr_line = attr_line, glyph_attr = glyph_attr,
-                         attr_unit = attr_unit, is_insert = is_insert,
-                         attr_pic = extra and extra.attr_pic, pic_images = extra and extra.pic_images })
+  opts.attr_par, opts.attr_line = attr_par, attr_line
+  local st = new_state_bin(opts)
   local one_inch = 4736286  -- 72.27pt in sp
   local ox = one_inch + tex.hoffset
   local oy = one_inch + tex.voffset
   local w, h, d = getwhd(box)
   vlist_out(st, box, ox, oy)
-  return result(st, "page", { page = page_no, width = w, height = h, depth = d,
-    page_width = tex.pagewidth, page_height = tex.pageheight, origin = { ox, oy }, pics = st.pics })
+  for k, v in pairs(opts.flags or {}) do st.flags[k] = v end
+  local ph = tex.pageheight
+  return finish_binary(st, 1, w, h, d, page_no, tex.pagewidth, ph, ox, oy, opts.images), st.pics, ph
 end
 
 return M

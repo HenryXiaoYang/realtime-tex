@@ -341,16 +341,21 @@ impl LayoutStore {
                 }
             }
         }
-        // a page whose capture text is unchanged keeps its parsed list (after an edit most
-        // pages are): read and hash every page, parse only the others
+        // a page whose capture bytes are unchanged keeps its decoded list (after an edit most
+        // pages are): read and hash every page, decode only the others
         let mut fresh = Vec::new();
         for n in 1..=cap.json.pages {
-            let text = cap.page_json(n)?;
-            let h = crate::document::hash_str(&text);
+            let bytes = cap.page_bytes(n)?;
+            let h = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                bytes.hash(&mut h);
+                h.finish()
+            };
             let dl = if self.page_hashes.get(&n) == Some(&h) && self.pages.contains_key(&n) {
                 None
             } else {
-                Some(DisplayList::from_json(&text)?)
+                Some(DisplayList::from_binary(&bytes)?)
             };
             fresh.push((n, h, dl));
         }
@@ -842,7 +847,8 @@ mod install_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let page = |n: i64, h: i64| {
             let json = format!(r#"{{"kind":"page","page":{n},"page_height":{h},"lines":[]}}"#);
-            std::fs::write(dir.join(format!("main.rtex-page{n}.json")), json).unwrap();
+            let dl = DisplayList::from_json(&json).unwrap();
+            std::fs::write(dir.join(format!("main.rtex-page{n}.bin")), dl.to_binary()).unwrap();
         };
         let cap = |pages: i64| CaptureResult {
             out_dir: dir.clone(),

@@ -136,7 +136,7 @@ the preamble to change instead.
   and the corpus. CI enforces it.
 
 To compare ownership-off display-list bytes with an unmodified revision on the same TeX Live
-and fonts (page JSON, page binary and raw live binary), export that revision's support files:
+and fonts (page binary and raw live binary), export that revision's support files:
 
 ```sh
 mkdir -p build/main-support

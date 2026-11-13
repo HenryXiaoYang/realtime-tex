@@ -149,11 +149,10 @@ fn converged_layout_equals_fresh_instrumented_run() {
         })
         .expect("a pass directory");
     for n in 1..=fresh.capture.json.pages {
-        let a =
-            std::fs::read_to_string(session_out.join(format!("main.rtex-page{n}.json"))).unwrap();
-        let b = std::fs::read_to_string(
+        let a = std::fs::read(session_out.join(format!("main.rtex-page{n}.bin"))).unwrap();
+        let b = std::fs::read(
             root.join("fresh-out")
-                .join(format!("main.rtex-page{n}.json")),
+                .join(format!("main.rtex-page{n}.bin")),
         )
         .unwrap();
         assert_eq!(
