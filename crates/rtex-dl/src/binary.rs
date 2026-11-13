@@ -580,7 +580,6 @@ fn write_items(out: &mut Writer, items: &[Item]) {
                 p.i32(*y);
                 p.str(data);
                 out.rec(0x28, &p.0);
-                i += 1;
             }
             Item::Image {
                 index,
@@ -699,6 +698,29 @@ pub fn encode(dl: &DisplayList) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn items_after_a_matrix_survive_encoding() {
+        let m = |op: &str| Item::Matrix {
+            op: op.into(),
+            x: 10,
+            y: 20,
+            data: if op == "set" {
+                "2 0 0 2".into()
+            } else {
+                String::new()
+            },
+        };
+        let rule = Item::Rule {
+            x: 1,
+            y_top: 2,
+            width: 3,
+            height: 4,
+        };
+        let mut dl = sample();
+        dl.other = vec![m("save"), m("set"), rule.clone(), m("restore"), rule];
+        assert_eq!(decode(&dl.to_binary()).unwrap().other, dl.other);
+    }
+
     #[test]
     fn math_owners_roundtrip() {
         let mut dl = sample();
