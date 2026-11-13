@@ -3,136 +3,27 @@
 //! channel of their own (stdout is not clean: the banner is printed even in batch mode — see
 //! docs/engine-protocol.md). The channel is a FIFO on Unix and a pair of named pipes on Windows
 //! (`transport`).
+//!
+//! `FastServer` is here; `protocol` has what it answers, `tex_log` the excerpt of its TeX log
+//! shown when it fails.
+
+mod protocol;
+#[cfg(test)]
+mod tests;
+mod tex_log;
+
+pub use protocol::{CompileResult, EngineError, Response, RoundTrip};
 
 use crate::texlive::TexLive;
 use crate::transport::{Frame, Frames, Transport};
 use anyhow::{bail, Context, Result};
 use rtex_dl::DisplayList;
-use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct EngineError {
-    #[serde(default)]
-    pub message: Option<String>,
-    #[serde(default)]
-    pub context: Option<String>,
-    #[serde(default)]
-    pub line: Option<i64>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CompileResult {
-    pub req: i64,
-    #[serde(default)]
-    pub ctx: Option<i64>,
-    pub status: String,
-    #[serde(default)]
-    pub errors: Vec<EngineError>,
-    #[serde(default)]
-    pub dl: Option<DisplayList>,
-    /// The display list as received (binary encoding revision 1), kept so hosts need no re-encoding.
-    #[serde(skip)]
-    pub dl_binary: Option<Vec<u8>>,
-    #[serde(default)]
-    pub dl_bytes: i64,
-    #[serde(default)]
-    pub t_tex_us: i64,
-    #[serde(default)]
-    pub t_traverse_us: i64,
-    #[serde(default)]
-    pub t_pack_us: i64,
-    #[serde(default)]
-    pub stages_us: serde_json::Value,
-    /// Image resources used by the display list (index → file), from the server's graphicx hook.
-    #[serde(default)]
-    pub images: std::collections::BTreeMap<String, rtex_dl::ImageInfo>,
-    /// Counters the compile advanced: name → value at the end (see rtex-serve.lua finish()).
-    #[serde(default)]
-    pub counters: std::collections::BTreeMap<String, i64>,
-    /// Control sequences the source mentions whose meaning the compile changed (a definition
-    /// or \let that leaked out of the unit's box).
-    #[serde(default)]
-    pub leaks: Vec<String>,
-    /// Picture environments the compile began, and how many of them came from the picture
-    /// cache (present when the request carried cache entries).
-    #[serde(default)]
-    pub pics_seen: Option<i64>,
-    #[serde(default)]
-    pub pics_used: Option<i64>,
-    /// A Lua error in the server while handling the request (with its traceback): the result
-    /// is an error the unit's text did not cause, sent instead of nothing so the host does not
-    /// wait out the watchdog.
-    #[serde(default)]
-    pub internal: Option<String>,
-    /// Host-side stage times (µs): send, wait, read, parse.
-    #[serde(skip)]
-    pub host_us: [u64; 4],
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "op")]
-pub enum Response {
-    #[serde(rename = "ready")]
-    Ready {
-        banner: String,
-        #[serde(default)]
-        font_nextid: i64,
-        #[serde(default)]
-        fingerprint: String,
-    },
-    #[serde(rename = "ok")]
-    Ok { id: i64 },
-    #[serde(rename = "result")]
-    Result(Box<CompileResult>),
-    #[serde(rename = "fatal")]
-    Fatal {
-        #[serde(default)]
-        req: Option<i64>,
-        reason: String,
-        #[serde(default)]
-        errors: Vec<EngineError>,
-        #[serde(default)]
-        before: String,
-        #[serde(default)]
-        after: String,
-    },
-    #[serde(rename = "pong")]
-    Pong,
-    #[serde(rename = "stats")]
-    Stats {
-        requests: i64,
-        font_nextid: i64,
-        node_mem: String,
-        grouplevel: i64,
-        nest: i64,
-        luastate: f64,
-    },
-    #[serde(rename = "profile")]
-    Profile {
-        #[serde(default)]
-        us: serde_json::Value,
-        #[serde(default)]
-        input_ptr: i64,
-    },
-    #[serde(rename = "bye")]
-    Bye,
-    #[serde(rename = "error")]
-    Error { message: String },
-}
-
-/// Timing of one round trip as seen from the host.
-#[derive(Debug, Clone, Copy, Default, Serialize)]
-pub struct RoundTrip {
-    pub total: Duration,
-    pub t_tex: Duration,
-    pub t_traverse: Duration,
-    pub t_pack: Duration,
-}
+use tex_log::*;
 
 pub struct FastServer {
     child: Child,
@@ -591,106 +482,5 @@ impl Drop for FastServer {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
-    }
-}
-
-/// The first TeX or Lua error in a log (its message and the lines up to the `l.<n>` line), else
-/// its last lines; at most 400 characters on one line. None when there is no log.
-fn tex_log_excerpt(log: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(log).ok()?;
-    // MiKTeX ignores max_print_line and wraps at 79 characters: join wrapped lines first
-    let mut joined: Vec<String> = Vec::new();
-    let mut wrapped = false;
-    for l in text.lines() {
-        match joined.last_mut() {
-            Some(prev) if wrapped => prev.push_str(l),
-            _ => joined.push(l.to_string()),
-        }
-        wrapped = l.chars().count() == 79;
-    }
-    let lines: Vec<&str> = joined.iter().map(|l| l.trim_end()).collect();
-    // a TeX error starts with "!"; LuaTeX reports a Lua error as "<file>:<line>: message"
-    // followed by "stack traceback:", with no "!"
-    let first = lines.iter().enumerate().position(|(i, l)| {
-        l.starts_with('!')
-            || lines
-                .get(i + 1)
-                .is_some_and(|n| n.starts_with("stack traceback:"))
-    });
-    let picked: Vec<&str> = match first {
-        Some(i) => {
-            let end = lines[i..]
-                .iter()
-                .position(|l| l.starts_with("l."))
-                .map(|j| i + j + 1)
-                .unwrap_or(lines.len())
-                .min(i + 6);
-            lines[i..end].to_vec()
-        }
-        None => {
-            let tail: Vec<&str> = lines
-                .iter()
-                .rev()
-                .filter(|l| !l.is_empty())
-                .take(3)
-                .copied()
-                .collect();
-            tail.into_iter().rev().collect()
-        }
-    };
-    let mut out = picked.join(" / ");
-    if first.is_none() && text.to_ascii_lowercase().contains("no pages of output") {
-        // no error, yet the run ended: a \stop or \end{document} before \begin{document}
-        out = "the preamble ended the run before \\begin{document} (no page was written)".into();
-    }
-    if out.chars().count() > 400 {
-        out = out.chars().take(400).collect::<String>() + "…";
-    }
-    (!out.is_empty()).then_some(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn startup_errors_quote_the_first_tex_error() {
-        let log = std::env::temp_dir().join(format!("rtex-excerpt-{}.log", std::process::id()));
-        std::fs::write(
-            &log,
-            "This is LuaHBTeX\n(./rtex-serve-g1.tex\n! LaTeX Error: File `foo.sty' not found.\n\nType X to quit.\nl.3 \\usepackage{foo}\nmore\n",
-        )
-        .unwrap();
-        let x = tex_log_excerpt(&log).unwrap();
-        let _ = std::fs::remove_file(&log);
-        assert_eq!(
-            x,
-            "! LaTeX Error: File `foo.sty' not found. /  / Type X to quit. / l.3 \\usepackage{foo}"
-        );
-        // a Lua error comes before the TeX errors it causes
-        std::fs::write(
-            &log,
-            {
-                // wrapped at 79 characters, as MiKTeX writes it
-                let msg = format!(
-                    "(./{}.tex)D:/rtex-serve.lua:712: cannot open response channel PIPE",
-                    "y".repeat(40)
-                );
-                let (head, rest) = msg.split_at(79);
-                format!("{head}\n{rest}\nstack traceback:\n\t[C]: in function 'assert'\nl.5 ...\n\n! Undefined control sequence.\nl.7 \\loop\n")
-            },
-        )
-        .unwrap();
-        let x = tex_log_excerpt(&log).unwrap();
-        let _ = std::fs::remove_file(&log);
-        assert!(x.contains("cannot open response channel PIPE"), "{x}");
-        // \stop in the preamble: no error, no page
-        std::fs::write(&log, "(./rtex-preamble.tex)\n )\n\nwarning  (pdf backend): no pages of output.\n\nPDF statistics: 0 PDF objects out of 1000\n").unwrap();
-        let x = tex_log_excerpt(&log).unwrap();
-        let _ = std::fs::remove_file(&log);
-        assert!(
-            x.starts_with("the preamble ended the run before \\begin{document}"),
-            "{x}"
-        );
     }
 }
