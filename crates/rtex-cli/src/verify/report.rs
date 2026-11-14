@@ -106,3 +106,14 @@ pub struct PicCacheReport {
     pub wall_cached_ms: u64,
     pub pass: bool,
 }
+
+impl Report {
+    /// Every layer that ran passed, and the capture left the PDF as a clean build makes it.
+    pub fn passed(&self) -> bool {
+        self.layer1_pass
+            && self.layer2_pass
+            && self.layer3_pass.unwrap_or(true)
+            && self.capture_pdf_equals_clean
+            && self.pic_cache.as_ref().map(|p| p.pass).unwrap_or(true)
+    }
+}

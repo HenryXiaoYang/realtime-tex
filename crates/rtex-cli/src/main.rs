@@ -206,6 +206,7 @@ enum Cmd {
     },
 }
 
+/// The command dispatch: one arm per command, each passing its options to the command's module.
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     let cli = Cli::parse();
@@ -263,12 +264,7 @@ fn main() -> anyhow::Result<()> {
                 min_cached,
                 math_owner_attribute,
             })?;
-            if !(r.layer1_pass
-                && r.layer2_pass
-                && r.layer3_pass.unwrap_or(true)
-                && r.capture_pdf_equals_clean
-                && r.pic_cache.as_ref().map(|p| p.pass).unwrap_or(true))
-            {
+            if !r.passed() {
                 std::process::exit(1);
             }
         }
@@ -313,36 +309,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Cmd::Doctor => {
-            println!("rtex {}", env!("CARGO_PKG_VERSION"));
-            let tex = rtex_core::texlive::find_rtex_texdir();
-            match &tex {
-                Ok(d) => println!("support files: {}", d.display()),
-                Err(e) => println!("support files: missing ({e})"),
-            }
-            let lua = rtex_core::texlive::find_lualatex();
-            match &lua {
-                Ok((_, l)) => {
-                    let v = std::process::Command::new(l)
-                        .arg("--version")
-                        .output()
-                        .ok()
-                        .and_then(|o| {
-                            String::from_utf8_lossy(&o.stdout)
-                                .lines()
-                                .next()
-                                .map(str::to_string)
-                        })
-                        .unwrap_or_default();
-                    println!("lualatex: {} ({v})", l.display());
-                }
-                Err(e) => println!("lualatex: missing ({e})"),
-            }
-            if tex.is_err() {
-                std::process::exit(1);
-            }
-            if lua.is_err() {
-                std::process::exit(2);
-            }
+            doctor();
         }
         Cmd::Dl2json { file } => {
             let bytes = std::fs::read(&file)?;
@@ -370,53 +337,7 @@ fn main() -> anyhow::Result<()> {
             out,
             check,
         } => {
-            let session =
-                rtex_core::Session::open(rtex_core::SessionConfig::new(&project, main.clone()))?;
-            let job = session.export_pdf(&out);
-            let (ev, _) = session.wait_for(
-                std::time::Duration::from_secs(1800),
-                |e| matches!(e, rtex_core::Event::PdfExported { job_id, .. } if *job_id == job),
-            );
-            let Some(rtex_core::Event::PdfExported {
-                path,
-                status,
-                converged,
-                passes,
-                ..
-            }) = ev
-            else {
-                anyhow::bail!("no export result")
-            };
-            println!(
-                "export: status {:?} converged {} passes {} path {:?}",
-                status, converged, passes, path
-            );
-            session.close();
-            if check {
-                let tl = rtex_core::texlive::TexLive::discover()?;
-                let tmp =
-                    std::env::temp_dir().join(format!("rtex-export-check-{}", std::process::id()));
-                let o = rtex_core::background::run_pass(
-                    &tl,
-                    &rtex_core::paths::canonical(&project)?,
-                    &main,
-                    &tmp,
-                    5,
-                    rtex_core::background::BibTool::Auto,
-                    false,
-                )?;
-                let d = rtex_verify::pdfcompare::compare(&out, &o.capture.pdf)?;
-                println!(
-                    "independent clean build: {} passes, equal = {} {:?}",
-                    o.passes,
-                    d.equal,
-                    d.differences.iter().take(3).collect::<Vec<_>>()
-                );
-                let _ = std::fs::remove_dir_all(&tmp);
-                if !d.equal || !converged {
-                    std::process::exit(1);
-                }
-            }
+            export(project, main, out, check)?;
         }
         Cmd::Probe {
             project,
@@ -433,6 +354,92 @@ fn main() -> anyhow::Result<()> {
         } => {
             gen_book::generate(pages, variant, fonts, seed, &out)?;
             println!("wrote {}", out.display());
+        }
+    }
+    Ok(())
+}
+
+/// `rtex doctor`: where the support files and LuaLaTeX are. Exits 1 without the support files,
+/// 2 without LuaLaTeX.
+fn doctor() {
+    println!("rtex {}", env!("CARGO_PKG_VERSION"));
+    let tex = rtex_core::texlive::find_rtex_texdir();
+    match &tex {
+        Ok(d) => println!("support files: {}", d.display()),
+        Err(e) => println!("support files: missing ({e})"),
+    }
+    let lua = rtex_core::texlive::find_lualatex();
+    match &lua {
+        Ok((_, l)) => {
+            let v = std::process::Command::new(l)
+                .arg("--version")
+                .output()
+                .ok()
+                .and_then(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .next()
+                        .map(str::to_string)
+                })
+                .unwrap_or_default();
+            println!("lualatex: {} ({v})", l.display());
+        }
+        Err(e) => println!("lualatex: missing ({e})"),
+    }
+    if tex.is_err() {
+        std::process::exit(1);
+    }
+    if lua.is_err() {
+        std::process::exit(2);
+    }
+}
+
+/// `rtex export`: a PDF through a session and, with `--check`, its comparison with an
+/// independent clean build. Exits 1 when they differ or the export did not converge.
+fn export(project: PathBuf, main: String, out: PathBuf, check: bool) -> anyhow::Result<()> {
+    let session = rtex_core::Session::open(rtex_core::SessionConfig::new(&project, main.clone()))?;
+    let job = session.export_pdf(&out);
+    let (ev, _) = session.wait_for(
+        std::time::Duration::from_secs(1800),
+        |e| matches!(e, rtex_core::Event::PdfExported { job_id, .. } if *job_id == job),
+    );
+    let Some(rtex_core::Event::PdfExported {
+        path,
+        status,
+        converged,
+        passes,
+        ..
+    }) = ev
+    else {
+        anyhow::bail!("no export result")
+    };
+    println!(
+        "export: status {:?} converged {} passes {} path {:?}",
+        status, converged, passes, path
+    );
+    session.close();
+    if check {
+        let tl = rtex_core::texlive::TexLive::discover()?;
+        let tmp = std::env::temp_dir().join(format!("rtex-export-check-{}", std::process::id()));
+        let o = rtex_core::background::run_pass(
+            &tl,
+            &rtex_core::paths::canonical(&project)?,
+            &main,
+            &tmp,
+            5,
+            rtex_core::background::BibTool::Auto,
+            false,
+        )?;
+        let d = rtex_verify::pdfcompare::compare(&out, &o.capture.pdf)?;
+        println!(
+            "independent clean build: {} passes, equal = {} {:?}",
+            o.passes,
+            d.equal,
+            d.differences.iter().take(3).collect::<Vec<_>>()
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+        if !d.equal || !converged {
+            std::process::exit(1);
         }
     }
     Ok(())
