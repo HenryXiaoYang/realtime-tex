@@ -44,6 +44,10 @@ pub(super) fn segment(text: &str, rules: &SegmentRules) -> Vec<(Range<usize>, Sp
 /// Returns false when the slice ends inside an unclosed environment or with a run-in heading
 /// still waiting for its title's paragraph (the caller must then re-segment the whole file,
 /// since the environment swallows everything that follows, and the heading what comes next).
+///
+/// Long on purpose: it is one pass over the lines with its state in locals (the open span, the
+/// environment stack, a pending split, a heading whose braces or run-in title are still open),
+/// and every line reads and updates several of them. Splitting it would pass that state around.
 pub(super) fn segment_body(
     text: &str,
     body_start: usize,

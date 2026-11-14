@@ -128,84 +128,8 @@ impl Policy {
             user_inner_envs: BTreeSet::new(),
             list_envs,
         };
-        // Macros defined in the preamble whose bodies are themselves allow-listed are trusted:
-        // in text mode, in math mode, or both, depending on how the body classifies. Two rounds
-        // let a macro use one defined before it.
-        let defs = user_macro_definitions(&text);
-        // heading wrappers: the body starts with a heading command (the rest is bookkeeping:
-        // \phantomsection, \addcontentsline, \markboth); the capture sees the heading
-        for (name, _, body) in &defs {
-            let b = body.trim_start();
-            for h in HEADINGS {
-                if let Some(rest) = b.strip_prefix(&format!("\\{h}")) {
-                    if rest.starts_with('*') || rest.starts_with('{') || rest.starts_with('[') {
-                        policy.heading_macros.insert(name.clone(), (*h).to_string());
-                    }
-                }
-            }
-        }
-        for _round in 0..2 {
-            for (name, nargs, body) in &defs {
-                let mut b = body.clone();
-                for k in 1..=*nargs {
-                    b = b.replace(&format!("#{k}"), "x");
-                }
-                if b.contains('#')
-                    || b.contains("\\def")
-                    || b.contains("\\let")
-                    || b.contains("\\global")
-                    || b.contains("\\gdef")
-                    || b.contains("\\xdef")
-                    || b.contains("\\newcommand")
-                    || b.contains("\\renewcommand")
-                {
-                    continue;
-                }
-                if classify_source(&format!("x {b} x"), &policy).1.is_empty() {
-                    policy.trusted_macros.insert(name.clone());
-                }
-                if classify_source(&format!("$x {b} x$"), &policy).1.is_empty() {
-                    policy.trusted_math.insert(name.clone());
-                }
-            }
-        }
-        // Environments defined in the preamble: allowed when their begin and end code is
-        // allow-listed. One that opens a block environment (quote, itemize, center, a theorem)
-        // is a block unit itself (the capture tags it like a theorem); otherwise it is typeset
-        // inside the paragraph that uses it.
-        for (name, nargs, begin, end) in user_environment_definitions(&text) {
-            let mut b = format!("{begin} x {end}");
-            for k in 1..=nargs {
-                b = b.replace(&format!("#{k}"), "x");
-            }
-            if b.contains('#')
-                || b.contains("\\def")
-                || b.contains("\\let")
-                || b.contains("\\global")
-                || b.contains("\\gdef")
-                || b.contains("\\xdef")
-                || b.contains("\\newcommand")
-                || b.contains("\\renewcommand")
-                || name.is_empty()
-            {
-                continue;
-            }
-            let (shape, mut reasons) = classify_source(&b, &policy);
-            // declarations in the begin code are local to the environment's group
-            reasons.retain(|r| !matches!(r, Reason::SizeDeclarationOutsideGroup(_)));
-            if !reasons.is_empty() {
-                continue;
-            }
-            match shape {
-                UnitShape::Env(_) => {
-                    policy.theorem_envs.insert(name);
-                }
-                UnitShape::Par => {
-                    policy.user_inner_envs.insert(name);
-                }
-                UnitShape::Heading(_) => {}
-            }
-        }
+        trust_user_macros(&mut policy, &text);
+        trust_user_environments(&mut policy, &text);
         policy
     }
 
@@ -240,6 +164,93 @@ impl Policy {
             .cloned()
             .collect::<Vec<_>>()
             .join(",")
+    }
+}
+
+/// Adds the preamble's own macros to the policy: heading wrappers, and macros whose bodies
+/// the allow-list accepts.
+fn trust_user_macros(policy: &mut Policy, text: &str) {
+    // Macros defined in the preamble whose bodies are themselves allow-listed are trusted:
+    // in text mode, in math mode, or both, depending on how the body classifies. Two rounds
+    // let a macro use one defined before it.
+    let defs = user_macro_definitions(text);
+    // heading wrappers: the body starts with a heading command (the rest is bookkeeping:
+    // \phantomsection, \addcontentsline, \markboth); the capture sees the heading
+    for (name, _, body) in &defs {
+        let b = body.trim_start();
+        for h in HEADINGS {
+            if let Some(rest) = b.strip_prefix(&format!("\\{h}")) {
+                if rest.starts_with('*') || rest.starts_with('{') || rest.starts_with('[') {
+                    policy.heading_macros.insert(name.clone(), (*h).to_string());
+                }
+            }
+        }
+    }
+    for _round in 0..2 {
+        for (name, nargs, body) in &defs {
+            let mut b = body.clone();
+            for k in 1..=*nargs {
+                b = b.replace(&format!("#{k}"), "x");
+            }
+            if b.contains('#')
+                || b.contains("\\def")
+                || b.contains("\\let")
+                || b.contains("\\global")
+                || b.contains("\\gdef")
+                || b.contains("\\xdef")
+                || b.contains("\\newcommand")
+                || b.contains("\\renewcommand")
+            {
+                continue;
+            }
+            if classify_source(&format!("x {b} x"), policy).1.is_empty() {
+                policy.trusted_macros.insert(name.clone());
+            }
+            if classify_source(&format!("$x {b} x$"), policy).1.is_empty() {
+                policy.trusted_math.insert(name.clone());
+            }
+        }
+    }
+}
+
+/// Adds the preamble's own environments to the policy, as block units or as inline material.
+fn trust_user_environments(policy: &mut Policy, text: &str) {
+    // Environments defined in the preamble: allowed when their begin and end code is
+    // allow-listed. One that opens a block environment (quote, itemize, center, a theorem)
+    // is a block unit itself (the capture tags it like a theorem); otherwise it is typeset
+    // inside the paragraph that uses it.
+    for (name, nargs, begin, end) in user_environment_definitions(text) {
+        let mut b = format!("{begin} x {end}");
+        for k in 1..=nargs {
+            b = b.replace(&format!("#{k}"), "x");
+        }
+        if b.contains('#')
+            || b.contains("\\def")
+            || b.contains("\\let")
+            || b.contains("\\global")
+            || b.contains("\\gdef")
+            || b.contains("\\xdef")
+            || b.contains("\\newcommand")
+            || b.contains("\\renewcommand")
+            || name.is_empty()
+        {
+            continue;
+        }
+        let (shape, mut reasons) = classify_source(&b, policy);
+        // declarations in the begin code are local to the environment's group
+        reasons.retain(|r| !matches!(r, Reason::SizeDeclarationOutsideGroup(_)));
+        if !reasons.is_empty() {
+            continue;
+        }
+        match shape {
+            UnitShape::Env(_) => {
+                policy.theorem_envs.insert(name);
+            }
+            UnitShape::Par => {
+                policy.user_inner_envs.insert(name);
+            }
+            UnitShape::Heading(_) => {}
+        }
     }
 }
 
