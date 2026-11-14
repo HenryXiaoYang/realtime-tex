@@ -133,87 +133,8 @@ pub fn roundtrip(
         let mut pack = Vec::new();
         let mut glyphs = 0;
         let mut toggled = false;
-        let do_edit = |session: &Session,
-                       toggled: &mut bool|
-         -> Result<(f64, f64, f64, f64, usize)> {
-            let edit = if *toggled {
-                Edit {
-                    start_byte: pos,
-                    end_byte: pos + 2,
-                    text: String::new(),
-                }
-            } else {
-                Edit {
-                    start_byte: pos,
-                    end_byte: pos,
-                    text: " x".into(),
-                }
-            };
-            *toggled = !*toggled;
-            let t0 = Instant::now();
-            let r = session.apply_edit("main.tex", edit)?;
-            if r.routed != "fast" {
-                bail!("edit not routed fast: {:?}", r.reasons);
-            }
-            let (ev, others) = session.wait_for(Duration::from_secs(30), |e| {
-                matches!(e, Event::ParagraphUpdate { .. })
-            });
-            let Some(Event::ParagraphUpdate {
-                timing,
-                dl,
-                status,
-                diagnostics,
-                ..
-            }) = ev
-            else {
-                let seen: Vec<String> = others
-                    .iter()
-                    .map(|e| match e {
-                        Event::EngineState { state, reason, .. } => {
-                            format!("EngineState {state} {reason:?}")
-                        }
-                        Event::BackgroundScheduled { reasons, .. } => {
-                            format!("BackgroundScheduled {reasons:?}")
-                        }
-                        Event::Diagnostics { items, .. } => format!(
-                            "Diagnostics {:?}",
-                            items.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
-                        ),
-                        other => serde_json::to_value(other)
-                            .map(|v| v["event"].to_string())
-                            .unwrap_or_default()
-                            .to_string(),
-                    })
-                    .collect();
-                bail!("no paragraph update for par {pid} ({cat}); events seen: {seen:?}; edit result: {:?}", r.reasons)
-            };
-            if status != "ok" && status != "ok_degraded" {
-                bail!(
-                    "status {status} for {cat} par {pid} (edit {:?} at {pos}): {:?}",
-                    if *toggled { "insert" } else { "delete" },
-                    diagnostics
-                        .iter()
-                        .map(|d| format!(
-                            "{} | {}",
-                            d.message,
-                            d.context
-                                .clone()
-                                .unwrap_or_default()
-                                .chars()
-                                .take(200)
-                                .collect::<String>()
-                        ))
-                        .collect::<Vec<_>>()
-                );
-            }
-            Ok((
-                t0.elapsed().as_secs_f64() * 1e3,
-                timing.tex_us as f64 / 1e3,
-                timing.traverse_us as f64 / 1e3,
-                timing.pack_us as f64 / 1e3,
-                dl.glyph_count(),
-            ))
-        };
+        let do_edit =
+            |session: &Session, toggled: &mut bool| toggle_edit(session, toggled, pos, pid, cat);
         // warm this paragraph's fonts
         for _ in 0..3 {
             let _ = do_edit(&session, &mut toggled)?;
@@ -264,4 +185,95 @@ pub fn roundtrip(
     }
     session.close();
     Ok(results)
+}
+
+/// One timed edit: inserts two characters at `pos`, or removes them again, and waits for the
+/// unit's update. Returns the round trip and the engine's stage times in ms, and the glyph count.
+fn toggle_edit(
+    session: &Session,
+    toggled: &mut bool,
+    pos: usize,
+    pid: u64,
+    cat: &str,
+) -> Result<(f64, f64, f64, f64, usize)> {
+    let edit = if *toggled {
+        Edit {
+            start_byte: pos,
+            end_byte: pos + 2,
+            text: String::new(),
+        }
+    } else {
+        Edit {
+            start_byte: pos,
+            end_byte: pos,
+            text: " x".into(),
+        }
+    };
+    *toggled = !*toggled;
+    let t0 = Instant::now();
+    let r = session.apply_edit("main.tex", edit)?;
+    if r.routed != "fast" {
+        bail!("edit not routed fast: {:?}", r.reasons);
+    }
+    let (ev, others) = session.wait_for(Duration::from_secs(30), |e| {
+        matches!(e, Event::ParagraphUpdate { .. })
+    });
+    let Some(Event::ParagraphUpdate {
+        timing,
+        dl,
+        status,
+        diagnostics,
+        ..
+    }) = ev
+    else {
+        let seen: Vec<String> = others
+            .iter()
+            .map(|e| match e {
+                Event::EngineState { state, reason, .. } => {
+                    format!("EngineState {state} {reason:?}")
+                }
+                Event::BackgroundScheduled { reasons, .. } => {
+                    format!("BackgroundScheduled {reasons:?}")
+                }
+                Event::Diagnostics { items, .. } => format!(
+                    "Diagnostics {:?}",
+                    items.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
+                ),
+                other => serde_json::to_value(other)
+                    .map(|v| v["event"].to_string())
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+            .collect();
+        bail!(
+            "no paragraph update for par {pid} ({cat}); events seen: {seen:?}; edit result: {:?}",
+            r.reasons
+        )
+    };
+    if status != "ok" && status != "ok_degraded" {
+        bail!(
+            "status {status} for {cat} par {pid} (edit {:?} at {pos}): {:?}",
+            if *toggled { "insert" } else { "delete" },
+            diagnostics
+                .iter()
+                .map(|d| format!(
+                    "{} | {}",
+                    d.message,
+                    d.context
+                        .clone()
+                        .unwrap_or_default()
+                        .chars()
+                        .take(200)
+                        .collect::<String>()
+                ))
+                .collect::<Vec<_>>()
+        );
+    }
+    Ok((
+        t0.elapsed().as_secs_f64() * 1e3,
+        timing.tex_us as f64 / 1e3,
+        timing.traverse_us as f64 / 1e3,
+        timing.pack_us as f64 / 1e3,
+        dl.glyph_count(),
+    ))
 }
