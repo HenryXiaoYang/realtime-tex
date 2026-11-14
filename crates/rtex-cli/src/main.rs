@@ -1,3 +1,7 @@
+//! The `rtex` command: its subcommands and their options. Each subcommand's work is in its own
+//! module (`serve`, `verify`, `bench`, `probe`, `slice`) or, for the small ones, in a function
+//! below `main`.
+
 use rtex_core::fixtures as gen_book;
 mod bench;
 mod probe;
