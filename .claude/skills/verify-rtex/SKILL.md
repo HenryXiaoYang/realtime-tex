@@ -70,10 +70,27 @@ Proof standards:
 
 It stops the session this run started, if one is still alive (by the pid in `build/verify-run/$RUN/serve.pid`), and removes `build/verify-run/$RUN/`. It keeps `build/verify-evidence/$RUN/`. Do not kill `rtex` or `lualatex` by name: the user's editor runs its own sessions on this machine.
 
+## Changing `tex/*.lua`
+
+Lua has no compiler, so a local that a move or a rename left behind becomes a global and nothing complains until that line runs. Two helpers cover it:
+
+```sh
+# before and after the change: the global names of each file must be the same set
+.claude/skills/verify-rtex/scripts/lua-globals.sh tex/rtex-dl.lua tex/rtex-dl-walk.lua
+
+# for a change that must not alter output: old support files (a git revision) against the
+# working tree, byte for byte, on as many projects as you can afford
+.claude/skills/verify-rtex/scripts/lua-identity.sh $RUN HEAD build/verify-run/$RUN/project fixtures/corpus/*
+```
+
+`lua-identity.sh` exits 1 on any difference and writes `lua-identity.txt` to the evidence folder. It compares page lists and live display lists exactly, and the units file with the build folder's name masked, because that file holds absolute source paths. Also run `texlua tex/tests/run.lua`. A local that is reassigned (not just read) cannot be handed to another file by value: check for that before moving code between Lua files.
+
 ## Helpers
 
 - `scripts/rtexctl.sh launch|doctor|cleanup RUN`: build, check and tear down one run.
 - `scripts/serve-edit.py RUN [--find TEXT] [--text TEXT]`: one live edit through `rtex serve`, with transcript and verdict.
+- `scripts/lua-globals.sh FILE...`: the global names each Lua file touches.
+- `scripts/lua-identity.sh RUN BASE_REV PROJECT...`: output with the old and the new support files, compared byte for byte.
 
 ## Isolation
 
