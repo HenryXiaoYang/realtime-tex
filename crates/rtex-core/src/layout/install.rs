@@ -16,6 +16,31 @@ impl LayoutStore {
         self.snapshot_revision = snapshot_revision;
         self.units.clear();
         self.by_span.clear();
+        let per_span_count = self.units_from_capture(cap, &snapshot);
+        self.merge_composite_units(per_span_count);
+        let changed = self.install_pages(cap)?;
+        self.snapshot_index = snapshot
+            .iter()
+            .enumerate()
+            .map(|(i, sp)| (sp.id, i))
+            .collect();
+        self.snapshot_spans = snapshot;
+        self.capture_dir = Some(cap.out_dir.clone());
+        self.pdf = Some(cap.pdf.clone());
+        let labels =
+            crate::background::read_aux_labels(&cap.out_dir.join(format!("{}.aux", cap.jobname)));
+        self.labels_hash = crate::document::hash_str(&format!("{labels:?}"));
+        self.labels = Arc::new(labels);
+        Ok(changed)
+    }
+
+    /// One engine unit per captured unit, each mapped to the snapshot span that holds its first
+    /// source line. Returns how many units each span got.
+    fn units_from_capture(
+        &mut self,
+        cap: &CaptureResult,
+        snapshot: &[SnapshotSpan],
+    ) -> HashMap<ParaId, usize> {
         let paras: HashMap<i64, &CapturedParagraph> =
             cap.json.paragraphs.iter().map(|p| (p.seq, p)).collect();
         let mut per_span_count: HashMap<ParaId, usize> = HashMap::new();
@@ -24,7 +49,7 @@ impl LayoutStore {
             let file = crate::paths::key(&file);
             let file = file.trim_start_matches("./").to_string();
             let mut span = None;
-            for s in &snapshot {
+            for s in snapshot {
                 if s.file == file && u.begin_line >= s.first_line && u.begin_line <= s.last_line {
                     span = Some(s.id);
                     break;
@@ -94,6 +119,12 @@ impl LayoutStore {
                 uids: vec![u.uid],
             });
         }
+        per_span_count
+    }
+
+    /// Joins the paragraph units of one span into a composite unit, then indexes the spans that
+    /// have exactly one unit.
+    fn merge_composite_units(&mut self, mut per_span_count: HashMap<ParaId, usize>) {
         // Several consecutive paragraph units in one span (an explicit \par, a title line followed
         // by a text line) form one composite unit: the fast path typesets the span as one box, and
         // its rows are the members' rows in order. The first member provides the context.
@@ -171,6 +202,10 @@ impl LayoutStore {
                 }
             }
         }
+    }
+
+    /// Reads the pass's page lists and returns the pages that changed.
+    fn install_pages(&mut self, cap: &CaptureResult) -> anyhow::Result<Vec<i64>> {
         // a page whose capture bytes are unchanged keeps its decoded list (after an edit most
         // pages are): read and hash every page, decode only the others
         let mut fresh = Vec::new();
@@ -209,18 +244,6 @@ impl LayoutStore {
             }
         }
         self.page_hashes = new_hashes;
-        self.snapshot_index = snapshot
-            .iter()
-            .enumerate()
-            .map(|(i, sp)| (sp.id, i))
-            .collect();
-        self.snapshot_spans = snapshot;
-        self.capture_dir = Some(cap.out_dir.clone());
-        self.pdf = Some(cap.pdf.clone());
-        let labels =
-            crate::background::read_aux_labels(&cap.out_dir.join(format!("{}.aux", cap.jobname)));
-        self.labels_hash = crate::document::hash_str(&format!("{labels:?}"));
-        self.labels = Arc::new(labels);
         Ok(changed)
     }
 }
