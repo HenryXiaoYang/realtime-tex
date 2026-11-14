@@ -218,6 +218,6 @@ background path.
 | Picture cache | `crates/rtex-core/src/piccache/` (`scan.rs` finds pictures, `cacheable.rs` decides, `store.rs` keeps them), `tex/rtex-pic.lua` |
 | Live engine (Lua side) | `tex/rtex-serve.lua` (requests, compiles, results), `tex/rtex-serve-context.lua` (the fingerprint and context replay), `tex/rtex-serve-source.lua`, `tex/rtex-serve-profile.lua`, `tex/latex/rtex-serve-patches.tex` |
 | Node list → display list | `tex/rtex-dl.lua` (entry points, the state and its sinks), `tex/rtex-dl-walk.lua` (the box traversal), `tex/rtex-dl-fonts.lua` (fonts and TeX's rounding), `tex/rtex-dl-bin.lua` |
-| Capture package | `tex/latex/rtex-capture.sty`, `tex/rtex-capture.lua` |
+| Capture package | `tex/latex/rtex-capture.sty`, `tex/rtex-capture.lua` (units, counters and macros, shipout), `tex/rtex-capture-linebreak.lua`, `tex/rtex-capture-pics.lua` |
 
 The live engine's wire protocol is described in [engine-protocol.md](engine-protocol.md).
