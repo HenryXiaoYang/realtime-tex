@@ -80,44 +80,7 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
     let snap_dir = snapshot_dir(&s.cfg.build_dir);
     // a pass that cannot run is still a layout result: hosts see compile = Failed instead of a
     // pass that never ends
-    let failed = |msg: String| {
-        s.events
-            .send(Event::Diagnostics {
-                source: "background".into(),
-                items: vec![Diagnostic {
-                    severity: "error".into(),
-                    file: None,
-                    line: None,
-                    message: msg.clone(),
-                    context: None,
-                }],
-            })
-            .ok();
-        *s.convergence.lock() = Some(Convergence::PassLimitReached {
-            passes: 0,
-            reasons: vec![msg.clone()],
-        });
-        s.events
-            .send(Event::LayoutUpdate {
-                versions: Versions {
-                    source_revision: rev,
-                    ..Default::default()
-                },
-                compile: CompileStatus::Failed,
-                convergence: Convergence::PassLimitReached {
-                    passes: 0,
-                    reasons: vec![msg],
-                },
-                passes: 0,
-                pages_changed: vec![],
-                pages_total: 0,
-                placements: vec![],
-                eligible_paragraphs: vec![],
-                pdf_fallback: None,
-                wall_ms: t0.elapsed().as_millis() as u64,
-            })
-            .ok();
-    };
+    let failed = |msg: String| layout_failed(s, t0, rev, msg);
     if let Err(e) = write_snapshot(&s.cfg.project_root, &texts, &s.cfg.main_file, &snap_dir) {
         failed(format!("snapshot: {e}"));
         return;
@@ -128,12 +91,7 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
     // pass's PDF; the manifest is refreshed before every pass of the run (a pass's own
     // drawings serve the next one)
     let _ = std::fs::create_dir_all(&out_dir);
-    let pics: Vec<crate::piccache::PictureRef> = if s.cfg.picture_cache {
-        let pre_hash = crate::piccache::preamble_hash(&texts, &s.cfg.main_file);
-        crate::piccache::scan_pictures(&texts, &s.cfg.main_file, pre_hash)
-    } else {
-        Vec::new()
-    };
+    let pics = cacheable_pictures(s, &texts);
     let pic_cache =
         std::sync::Mutex::new(crate::piccache::PicCache::open(&out_dir.join("pic-cache")));
     // written into the directory of the pass about to run (the capture reads it from there)
@@ -204,46 +162,7 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
             .and_then(|t| crate::split_preamble(t))
             .map(|(p, _)| crate::document::hash_str(p));
         let mut runner = |_pass: u32| -> Result<crate::capture::CaptureResult> {
-            let ready = {
-                let mut slot = s.standby.lock();
-                match slot.take() {
-                    Some(mut w) => {
-                        if Some(w.preamble_hash) == pre_hash && w.is_alive() {
-                            Some(w)
-                        } else {
-                            w.kill();
-                            None
-                        }
-                    }
-                    None => None,
-                }
-            };
-            let w = match ready {
-                Some(w) => w,
-                None => {
-                    let slot = standby_slot(s);
-                    spawn_standby(s, &texts, &unit_envs, slot)?
-                }
-            };
-            // this pass starts from the last one's aux family, then the next standby starts
-            // in the other slot (whose previous results are consumed by now)
-            prepare_dir(w.out_dir());
-            let other = if w.src_dir.ends_with("src-body-0") {
-                1
-            } else {
-                0
-            };
-            if let Ok(next) = spawn_standby(s, &texts, &unit_envs, other) {
-                *s.standby.lock() = Some(next);
-            }
-            let cap = w.run(
-                &s.cfg.project_root,
-                &texts,
-                &s.cfg.main_file,
-                Some(s.cfg.pass_timeout),
-            )?;
-            finished(&cap);
-            Ok(cap)
+            standby_pass(s, pre_hash, &texts, &unit_envs, &prepare_dir, &finished)
         };
         run_pass_with_runner(
             crate::background::PassPlan {
@@ -261,18 +180,7 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
         // plain passes: a fresh lualatex per pass in pass-0 (sequential, so one directory)
         let dir = pass_dir(s, 0);
         let mut runner = |_pass: u32| -> Result<crate::capture::CaptureResult> {
-            prepare_dir(&dir);
-            let cap = crate::capture::run_capture_with(
-                &s.tl,
-                &snap_dir,
-                &s.cfg.main_file,
-                &dir,
-                true,
-                &unit_envs,
-                Some(s.cfg.pass_timeout),
-            )?;
-            finished(&cap);
-            Ok(cap)
+            plain_pass(s, &dir, &snap_dir, &unit_envs, &prepare_dir, &finished)
         };
         run_pass_with_runner(
             crate::background::PassPlan {
@@ -306,4 +214,92 @@ pub(super) fn run_background_pass_inner(s: &Shared) {
         rev,
         false,
     );
+}
+
+/// One pass in a standby engine: the one prepared while the user typed if its preamble is
+/// current, else a new one. Starts the next standby in the other slot before running.
+fn standby_pass(
+    s: &Shared,
+    pre_hash: Option<u64>,
+    texts: &BTreeMap<String, String>,
+    unit_envs: &str,
+    prepare_dir: &dyn Fn(&Path),
+    finished: &dyn Fn(&crate::capture::CaptureResult),
+) -> Result<crate::capture::CaptureResult> {
+    let ready = {
+        let mut slot = s.standby.lock();
+        match slot.take() {
+            Some(mut w) => {
+                if Some(w.preamble_hash) == pre_hash && w.is_alive() {
+                    Some(w)
+                } else {
+                    w.kill();
+                    None
+                }
+            }
+            None => None,
+        }
+    };
+    let w = match ready {
+        Some(w) => w,
+        None => {
+            let slot = standby_slot(s);
+            spawn_standby(s, texts, unit_envs, slot)?
+        }
+    };
+    // this pass starts from the last one's aux family, then the next standby starts
+    // in the other slot (whose previous results are consumed by now)
+    prepare_dir(w.out_dir());
+    let other = if w.src_dir.ends_with("src-body-0") {
+        1
+    } else {
+        0
+    };
+    if let Ok(next) = spawn_standby(s, texts, unit_envs, other) {
+        *s.standby.lock() = Some(next);
+    }
+    let cap = w.run(
+        &s.cfg.project_root,
+        texts,
+        &s.cfg.main_file,
+        Some(s.cfg.pass_timeout),
+    )?;
+    finished(&cap);
+    Ok(cap)
+}
+
+/// One pass in a fresh LuaLaTeX, in `dir`.
+fn plain_pass(
+    s: &Shared,
+    dir: &Path,
+    snap_dir: &Path,
+    unit_envs: &str,
+    prepare_dir: &dyn Fn(&Path),
+    finished: &dyn Fn(&crate::capture::CaptureResult),
+) -> Result<crate::capture::CaptureResult> {
+    prepare_dir(dir);
+    let cap = crate::capture::run_capture_with(
+        &s.tl,
+        snap_dir,
+        &s.cfg.main_file,
+        dir,
+        true,
+        unit_envs,
+        Some(s.cfg.pass_timeout),
+    )?;
+    finished(&cap);
+    Ok(cap)
+}
+
+/// The document's picture environments, for the picture cache; none when it is off.
+fn cacheable_pictures(
+    s: &Shared,
+    texts: &BTreeMap<String, String>,
+) -> Vec<crate::piccache::PictureRef> {
+    if s.cfg.picture_cache {
+        let pre_hash = crate::piccache::preamble_hash(texts, &s.cfg.main_file);
+        crate::piccache::scan_pictures(texts, &s.cfg.main_file, pre_hash)
+    } else {
+        Vec::new()
+    }
 }
