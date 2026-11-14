@@ -227,6 +227,88 @@ pub fn run(opts: SliceOpts) -> Result<serde_json::Value> {
     }
 
     // 5. independent PDF check: capture page lines of this paragraph vs clean PDF content stream
+    let (rep_par, rep_page, rep_fast) =
+        pdf_checks(&clean, &fast, &page_dl, page_no, para, &placements)?;
+
+    // 6. edit loop timing: individual edits (toggle a trailing word) and amortized
+    let EditTimings {
+        med,
+        p5,
+        p95,
+        max,
+        tmed,
+        vmed,
+        pmed,
+        amed,
+        ap95,
+    } = edit_timings(&mut server, para, &source, &opts)?;
+
+    // 7. error path and engine health
+    let (bad, _) = server.compile(para.uid, "Text with \\undefinedmacro inside.")?;
+    println!(
+        "error path: status={} errors={:?}",
+        bad.status,
+        bad.errors
+            .iter()
+            .map(|e| (e.message.clone(), e.line))
+            .collect::<Vec<_>>()
+    );
+    let (ok_again, _) = server.compile(para.uid, &source)?;
+    println!(
+        "after error: status={} lines={}",
+        ok_again.status,
+        ok_again.dl.as_ref().map(|d| d.lines.len()).unwrap_or(0)
+    );
+    let st = server.stats()?;
+    if let Response::Stats {
+        requests,
+        font_nextid,
+        grouplevel,
+        nest,
+        ..
+    } = &st
+    {
+        println!("engine stats: requests={requests} font_nextid={font_nextid} grouplevel={grouplevel} nest={nest}");
+    }
+    server.shutdown()?;
+
+    let report = serde_json::json!({
+        "project": project, "paragraph_seq": para.uid, "source_lines": [para.captured.begin_line, para.captured.end_line],
+        "typeset_lines": fast.lines.len(), "glyphs": fast.glyph_count(),
+        "fast_vs_capture": {"identical": same, "total": total, "notes": notes},
+        "pdf_check_paragraph": rep_par, "pdf_check_page": rep_page, "pdf_check_fast": rep_fast,
+        "roundtrip_ms": {"median": med, "p5": p5, "p95": p95, "max": max, "edits": opts.edits,
+                         "tex_median": tmed, "traverse_median": vmed, "pack_median": pmed,
+                         "amortized_median": amed, "amortized_p95": ap95},
+        "server_startup_s": server_startup_placeholder(),
+        "capture_s": cap.wall.as_secs_f64(), "clean_build_s": clean.wall.as_secs_f64(),
+    });
+    if let Some(p) = &opts.json_out {
+        std::fs::write(p, serde_json::to_string_pretty(&report)?)?;
+        println!("report written to {}", p.display());
+    }
+    let _ = SP_PER_BP;
+    Ok(report)
+}
+
+fn server_startup_placeholder() -> f64 {
+    0.0
+}
+
+/// The clean PDF's page against three display lists: the paragraph's captured lines, the
+/// whole captured page, and the live result moved to its placement.
+fn pdf_checks(
+    clean: &CaptureResult,
+    fast: &DisplayList,
+    page_dl: &DisplayList,
+    page_no: i64,
+    para: &rtex_core::layout::EngineUnit,
+    placements: &[rtex_core::capture::Placement],
+) -> Result<(
+    rtex_verify::compare::CompareReport,
+    rtex_verify::compare::CompareReport,
+    rtex_verify::compare::CompareReport,
+)> {
     let pdf_pages = pdftext::extract(&clean.pdf)?;
     let pdf_page = pdf_pages
         .iter()
@@ -235,10 +317,10 @@ pub fn run(opts: SliceOpts) -> Result<serde_json::Value> {
     let quantum = 10f64.powi(-(pdf_page.decimals.max(1) as i32));
     let tol = quantum * 1.0;
     let ref_lines = page_dl.rows_of(para.uid);
-    let rep_par = compare_page(&page_dl, pdf_page, &ref_lines, tol);
+    let rep_par = compare_page(page_dl, pdf_page, &ref_lines, tol);
     println!("PDF check (paragraph lines, {} decimals, tol {:.4} bp): matched {}/{} glyphs, within tol {}, max |dx| {:.5} bp, max |dy| {:.5} bp, max scale err {:.6}, max advance err {:.5} bp",
         pdf_page.decimals, tol, rep_par.matched, rep_par.dl_glyphs, rep_par.within_tolerance, rep_par.max_dx_bp, rep_par.max_dy_bp, rep_par.max_scale_err, rep_par.max_advance_err_bp);
-    let rep_page = compare_page(&page_dl, pdf_page, &[], tol);
+    let rep_page = compare_page(page_dl, pdf_page, &[], tol);
     println!("PDF check (whole page {}): matched {}/{} DL glyphs (PDF has {}), within tol {}, max |dx| {:.5} bp, max |dy| {:.5} bp, rules {}/{} matched",
         page_no, rep_page.matched, rep_page.dl_glyphs, rep_page.pdf_glyphs, rep_page.within_tolerance, rep_page.max_dx_bp, rep_page.max_dy_bp, rep_page.rules_matched, rep_page.rules_dl);
     println!(
@@ -294,8 +376,32 @@ pub fn run(opts: SliceOpts) -> Result<serde_json::Value> {
     let rep_fast = compare_page(&fast_on_page, pdf_page, &fast_lines, tol);
     println!("PDF check (fast-path DL anchored at placement): matched {}/{} glyphs, within tol {}, max |dx| {:.5} bp, max |dy| {:.5} bp",
         rep_fast.matched, rep_fast.dl_glyphs, rep_fast.within_tolerance, rep_fast.max_dx_bp, rep_fast.max_dy_bp);
+    Ok((rep_par, rep_page, rep_fast))
+}
 
-    // 6. edit loop timing: individual edits (toggle a trailing word) and amortized
+/// Medians and percentiles of the edit loop, in ms: total (`med`, `p5`, `p95`, `max`), the TeX,
+/// traversal and packing stages (`tmed`, `vmed`, `pmed`), and back-to-back compiles (`amed`,
+/// `ap95`).
+struct EditTimings {
+    med: f64,
+    p5: f64,
+    p95: f64,
+    max: f64,
+    tmed: f64,
+    vmed: f64,
+    pmed: f64,
+    amed: f64,
+    ap95: f64,
+}
+
+/// Round trips of `edits` separate compiles (the source with and without a trailing word),
+/// then of compiles back to back.
+fn edit_timings(
+    server: &mut FastServer,
+    para: &rtex_core::layout::EngineUnit,
+    source: &str,
+    opts: &SliceOpts,
+) -> Result<EditTimings> {
     let mut totals = Vec::new();
     let mut tex = Vec::new();
     let mut trav = Vec::new();
@@ -306,7 +412,7 @@ pub fn run(opts: SliceOpts) -> Result<serde_json::Value> {
         let edited = if i % 2 == 1 {
             format!("{source} edit{i}")
         } else {
-            source.clone()
+            source.to_string()
         };
         let (r, rt) = server.compile(para.uid, &edited)?;
         if r.status == "error" {
@@ -331,7 +437,7 @@ pub fn run(opts: SliceOpts) -> Result<serde_json::Value> {
     for _ in 0..10 {
         let t0 = Instant::now();
         for _ in 0..20 {
-            server.compile(para.uid, &source)?;
+            server.compile(para.uid, source)?;
         }
         amort.push(t0.elapsed().as_secs_f64() * 1e3 / 20.0);
     }
@@ -340,55 +446,15 @@ pub fn run(opts: SliceOpts) -> Result<serde_json::Value> {
         "amortized (mean of 20 back-to-back, 10 samples): median {:.3} ms, P95 {:.3} ms",
         amed, ap95
     );
-
-    // 7. error path and engine health
-    let (bad, _) = server.compile(para.uid, "Text with \\undefinedmacro inside.")?;
-    println!(
-        "error path: status={} errors={:?}",
-        bad.status,
-        bad.errors
-            .iter()
-            .map(|e| (e.message.clone(), e.line))
-            .collect::<Vec<_>>()
-    );
-    let (ok_again, _) = server.compile(para.uid, &source)?;
-    println!(
-        "after error: status={} lines={}",
-        ok_again.status,
-        ok_again.dl.as_ref().map(|d| d.lines.len()).unwrap_or(0)
-    );
-    let st = server.stats()?;
-    if let Response::Stats {
-        requests,
-        font_nextid,
-        grouplevel,
-        nest,
-        ..
-    } = &st
-    {
-        println!("engine stats: requests={requests} font_nextid={font_nextid} grouplevel={grouplevel} nest={nest}");
-    }
-    server.shutdown()?;
-
-    let report = serde_json::json!({
-        "project": project, "paragraph_seq": para.uid, "source_lines": [para.captured.begin_line, para.captured.end_line],
-        "typeset_lines": fast.lines.len(), "glyphs": fast.glyph_count(),
-        "fast_vs_capture": {"identical": same, "total": total, "notes": notes},
-        "pdf_check_paragraph": rep_par, "pdf_check_page": rep_page, "pdf_check_fast": rep_fast,
-        "roundtrip_ms": {"median": med, "p5": p5, "p95": p95, "max": max, "edits": opts.edits,
-                         "tex_median": tmed, "traverse_median": vmed, "pack_median": pmed,
-                         "amortized_median": amed, "amortized_p95": ap95},
-        "server_startup_s": server_startup_placeholder(),
-        "capture_s": cap.wall.as_secs_f64(), "clean_build_s": clean.wall.as_secs_f64(),
-    });
-    if let Some(p) = &opts.json_out {
-        std::fs::write(p, serde_json::to_string_pretty(&report)?)?;
-        println!("report written to {}", p.display());
-    }
-    let _ = SP_PER_BP;
-    Ok(report)
-}
-
-fn server_startup_placeholder() -> f64 {
-    0.0
+    Ok(EditTimings {
+        med,
+        p5,
+        p95,
+        max,
+        tmed,
+        vmed,
+        pmed,
+        amed,
+        ap95,
+    })
 }
