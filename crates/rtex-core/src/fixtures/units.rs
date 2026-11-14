@@ -2,7 +2,7 @@
 
 use super::png::*;
 use super::text::*;
-use super::*;
+use super::{preamble_for, FontSet, Variant};
 use std::fmt::Write as _;
 use std::path::Path;
 

@@ -1,6 +1,10 @@
 //! What a session tells its host: events, their parts, and the result of an edit.
 
-use super::*;
+use crate::document::{EditOutcome, ParaId, Revision};
+use crate::layout::Fragment;
+use rtex_dl::DisplayList;
+use serde::Serialize;
+use std::path::PathBuf;
 
 /// Diagnostic view of one layout unit (`Session::layout_units`, `rtex serve` `units`).
 #[derive(Debug, Clone, serde::Serialize)]

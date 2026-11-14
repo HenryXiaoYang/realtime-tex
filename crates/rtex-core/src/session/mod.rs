@@ -10,24 +10,15 @@
 //!   engine), `pass_deliver` (a pass into a layout) and `export`.
 //! - `state`: what those threads share; `diag`: diagnostics from logs.
 
-use crate::background::{
-    run_pass_with, run_pass_with_runner, snapshot_dir, write_snapshot, BibTool, WarmEngine,
-};
-use crate::document::{Edit, EditOutcome, FileBuf, IdAllocator, ParaId, Revision, Span, SpanKind};
-use crate::eligibility::{
-    check_engine_unit, classify_source, classify_source_with, everypar_allowed, runs_into_title,
-    Policy, Reason, UnitShape,
-};
-use crate::engine::{FastServer, Response};
-use crate::layout::{EngineUnit, Fragment, LayoutStore, SnapshotSpan};
+use crate::document::{FileBuf, IdAllocator};
+use crate::eligibility::{Policy, Reason};
+use crate::layout::LayoutStore;
 use crate::texlive::TexLive;
-use anyhow::{anyhow, Context, Result};
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use anyhow::{Context, Result};
+use crossbeam_channel::{unbounded, Receiver};
 use parking_lot::Mutex;
-use rtex_dl::DisplayList;
-use serde::Serialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -49,14 +40,9 @@ mod state;
 
 pub use config::*;
 pub use diag::parse_log;
-use diag::*;
 use engine_loop::*;
-use engine_results::*;
-use engine_server::*;
 pub use events::*;
-use export::*;
 use live::*;
-use pass_deliver::*;
 use pass_standby::*;
 use passes::*;
 use state::*;

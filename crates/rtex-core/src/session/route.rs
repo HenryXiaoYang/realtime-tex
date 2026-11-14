@@ -1,7 +1,20 @@
 //! Routing an edited span: whether it can be compiled live, on which context (its own
 //! captured one or one borrowed from a neighbour), with which picture cache entries.
 
-use super::*;
+use super::config::*;
+use super::events::*;
+use super::live::*;
+use super::state::*;
+use super::{first_line_of, reason_str, Session};
+use crate::document::{FileBuf, ParaId, Revision, Span, SpanKind};
+use crate::eligibility::{
+    check_engine_unit, classify_source_with, everypar_allowed, runs_into_title, Policy, Reason,
+    UnitShape,
+};
+use crate::layout::{EngineUnit, LayoutStore};
+use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 impl Session {
     /// Decide the fast path for one span: the allow-list on its source, the capture facts of

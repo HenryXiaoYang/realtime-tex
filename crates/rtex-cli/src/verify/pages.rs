@@ -1,6 +1,10 @@
 //! Layers 2 and 3: every page's display list against the clean PDF's content stream, and, with `--raster`, its rendering against the PDF's.
 
-use super::*;
+use super::report::*;
+use anyhow::Result;
+use rtex_dl::{DisplayList, Item};
+use rtex_verify::compare::compare_page;
+use rtex_verify::{pdftext, raster};
 
 /// Layers 2 and 3, page by page; fills the report's `pages` and prints the layers' summaries.
 pub(super) fn check_pages(

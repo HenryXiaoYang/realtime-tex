@@ -1,6 +1,19 @@
 //! Editing a session's documents: applying an edit, routing the touched units to the live engine or the background, and tracking the files a document pulls in.
 
-use super::*;
+use super::config::*;
+use super::diag::*;
+use super::events::*;
+use super::pass_standby::*;
+use super::state::*;
+use super::Session;
+use crate::document::{Edit, EditOutcome, FileBuf, ParaId, Revision};
+use crate::eligibility::Policy;
+use crate::engine::FastServer;
+use anyhow::{anyhow, Result};
+use rtex_dl::DisplayList;
+use std::path::Path;
+use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 impl Session {
     /// The key a host's path maps to: project-relative, without a leading `./`; an absolute

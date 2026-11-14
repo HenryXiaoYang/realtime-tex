@@ -1,6 +1,10 @@
 //! `--pic-cache`: a second run that takes its pictures from the cache must give the same PDF.
 
-use super::*;
+use super::report::*;
+use anyhow::Result;
+use rtex_core::texlive::TexLive;
+use rtex_verify::raster;
+use std::path::Path;
 
 /// Picture cache check: build a cache from the converged capture (`cap`), run one more capture
 /// pass with its manifest, and compare units, placements and (optionally) rendered pages.

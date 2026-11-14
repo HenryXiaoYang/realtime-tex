@@ -1,6 +1,11 @@
 //! PDF export: a clean build of the session's buffers, without the capture package.
 
-use super::*;
+use super::diag::*;
+use super::events::*;
+use super::passes::*;
+use super::state::*;
+use crate::background::{run_pass_with, write_snapshot};
+use std::path::PathBuf;
 
 pub(super) fn run_export(s: &Shared, job: u64, out: PathBuf) {
     let (texts, _spans, _rev) = snapshot(s);

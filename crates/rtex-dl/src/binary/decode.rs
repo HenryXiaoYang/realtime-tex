@@ -2,7 +2,7 @@
 //! `decode` is long on purpose: it is one `match` with an arm per record type, in the order of
 //! the table in docs/display-list.md.
 
-use super::*;
+use super::{BinError, MAGIC, VERSION};
 use crate::{DisplayList, FontDesc, ImageInfo, Item, Line, Sp};
 
 pub(super) struct Reader<'a> {

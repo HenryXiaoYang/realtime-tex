@@ -1,7 +1,7 @@
 //! Finding the picture environments of a document, in the order TeX reads them, each with the hash of what can change its rendering.
 
 use super::cacheable::*;
-use super::*;
+use super::{hash_bytes, PictureRef, PICTURE_ENVS};
 use std::collections::BTreeMap;
 
 /// Body-level statements whose effect a later picture may depend on (hashed into every

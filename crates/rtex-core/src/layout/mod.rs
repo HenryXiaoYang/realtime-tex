@@ -10,9 +10,9 @@ mod query;
 
 pub use compare::compare_unit_rows;
 
-use crate::capture::{CaptureResult, CapturedParagraph, CapturedUnit, Placement};
+use crate::capture::{CapturedParagraph, CapturedUnit};
 use crate::document::{ParaId, Revision};
-use rtex_dl::{DisplayList, Item, Line, Sp};
+use rtex_dl::{DisplayList, Sp};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;

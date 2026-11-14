@@ -1,6 +1,6 @@
 //! `PicCache`: the cache on disk. Its index, the manifest a pass reads, and absorbing what a pass recorded.
 
-use super::*;
+use super::{CacheEntry, PictureRef, RecordedPic};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

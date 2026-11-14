@@ -2,7 +2,7 @@
 
 use super::gates::*;
 use super::roundtrip::*;
-use super::*;
+use super::{PAPER_LINEBREAK_MS, PAPER_ROUNDTRIP_MS};
 use anyhow::Result;
 use serde::Serialize;
 use std::collections::BTreeMap;

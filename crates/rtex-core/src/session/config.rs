@@ -1,6 +1,8 @@
 //! What a host configures when it opens a session.
 
-use super::*;
+use crate::background::BibTool;
+use std::path::PathBuf;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct SessionConfig {

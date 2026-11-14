@@ -1,6 +1,11 @@
 //! Installing a finished pass as the current layout: units and their contexts, the mapping from units to source spans, and the page lists (a page whose bytes are unchanged keeps its decoded list).
 
-use super::*;
+use super::{EngineUnit, LayoutStore, SnapshotSpan};
+use crate::capture::{CaptureResult, CapturedParagraph};
+use crate::document::{ParaId, Revision};
+use rtex_dl::DisplayList;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 impl LayoutStore {
     /// Install a finished capture pass. Maps units to spans by their first source line inside

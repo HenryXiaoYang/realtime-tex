@@ -1,7 +1,7 @@
 //! `\\input`, `\\include` and `\\subfile`: which files a text pulls in, loading them, and inlining them.
 
 use super::segment::*;
-use super::*;
+use super::{FileBuf, IdAllocator, ParaId, SpanKind};
 use std::ops::Range;
 
 /// `\input{…}`,`\include{…}` and `\subfile{…}` commands in `text` (outside comments), as

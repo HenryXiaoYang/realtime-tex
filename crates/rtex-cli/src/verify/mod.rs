@@ -18,16 +18,8 @@ use anyhow::Result;
 use pages::*;
 use pic_cache::*;
 use rtex_core::background::{run_pass_with, BibTool};
-use rtex_core::eligibility::{check_engine_unit, classify_source, Policy, UnitShape};
-use rtex_core::engine::FastServer;
-use rtex_core::layout::compare_unit_rows as compare_rows;
-use rtex_core::layout::LayoutStore;
+use rtex_core::eligibility::Policy;
 use rtex_core::texlive::TexLive;
-use rtex_dl::{DisplayList, Item, Line};
-use rtex_verify::compare::compare_page;
-use rtex_verify::{pdftext, raster};
-use serde::Serialize;
-use std::path::{Path, PathBuf};
 use units::*;
 
 pub fn run(opts: VerifyOpts) -> Result<Report> {

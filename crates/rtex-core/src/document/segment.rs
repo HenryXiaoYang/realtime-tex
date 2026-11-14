@@ -1,7 +1,8 @@
 //! Segmentation: a file's text into spans (preamble, units, the rest), and the source the live engine typesets for one span.
 
 use super::lex::*;
-use super::*;
+use super::{FileBuf, SegmentRules, Span, SpanKind, BLOCK_ENVS, HEADING_CMDS};
+use crate::piccache::PICTURE_ENVS;
 use std::ops::Range;
 
 pub(super) fn compute_line_starts(text: &str) -> Vec<usize> {

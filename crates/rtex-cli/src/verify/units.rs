@@ -1,6 +1,14 @@
 //! Layer 1: every unit the live path may take, typeset by a live engine and compared with the rows the full run captured.
 
-use super::*;
+use super::report::*;
+use anyhow::Result;
+use rtex_core::eligibility::{check_engine_unit, classify_source, Policy, UnitShape};
+use rtex_core::engine::FastServer;
+use rtex_core::layout::compare_unit_rows as compare_rows;
+use rtex_core::layout::LayoutStore;
+use rtex_core::texlive::TexLive;
+use rtex_dl::{DisplayList, Item, Line};
+use std::path::Path;
 
 pub(super) fn row_text(l: &Line) -> String {
     let mut s = String::new();

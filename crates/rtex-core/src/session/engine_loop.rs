@@ -2,7 +2,16 @@
 //! collects results (direct or queued), and runs probes and warm-ups. `engine_server` starts and
 //! replaces the server; `engine_results` turns a result into a paragraph update or a demotion.
 
-use super::*;
+use super::engine_results::*;
+use super::engine_server::*;
+use super::events::*;
+use super::first_line_of;
+use super::state::*;
+use crate::engine::{FastServer, Response};
+use anyhow::anyhow;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub(super) fn engine_thread(s: Arc<Shared>) {
     EngineLoop {

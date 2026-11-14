@@ -1,7 +1,10 @@
 //! `FileBuf`: a file's text with its spans, edited in place so span ids stay stable.
 
 use super::segment::*;
-use super::*;
+use super::{
+    hash_str, Edit, EditOutcome, FileBuf, IdAllocator, ParaId, Revision, SegmentRules, Span,
+    SpanKind,
+};
 use std::ops::Range;
 
 impl FileBuf {

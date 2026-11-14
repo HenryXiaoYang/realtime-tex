@@ -1,6 +1,16 @@
 //! What the engine thread (`engine_loop`) does with a result of the live engine: a paragraph update, a demotion to the background, or a restart after a failure or timeout.
 
-use super::*;
+use super::config::*;
+use super::diag::*;
+use super::events::*;
+use super::state::*;
+use super::{first_line_of, reason_str};
+use crate::eligibility::Reason;
+use crate::engine::FastServer;
+use crate::layout::{Fragment, LayoutStore};
+use rtex_dl::DisplayList;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
 /// A fast request the probe (or a leak) took away from the live path after `apply_edit`
 /// reported it as fast: undo the live bookkeeping (no overlay claims a result at this

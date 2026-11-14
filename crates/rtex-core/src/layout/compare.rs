@@ -1,6 +1,6 @@
 //! Comparing a live result's rows with the rows the pass captured for the same unit (`rtex verify`, probes).
 
-use super::*;
+use rtex_dl::{DisplayList, Item, Line};
 
 /// Compare a fast-path unit display list with the pass's rows for the same unit, which may be
 /// spread over several pages. Every row gets its own (x, y) offset from its placement, so the

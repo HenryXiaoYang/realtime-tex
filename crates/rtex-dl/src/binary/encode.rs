@@ -1,6 +1,6 @@
 //! Encoder: a `DisplayList` to bytes, the inverse of `decode`.
 
-use super::*;
+use super::{MAGIC, VERSION};
 use crate::{DisplayList, FontDesc, Item};
 
 pub(super) fn kind_code(d: &FontDesc) -> u8 {

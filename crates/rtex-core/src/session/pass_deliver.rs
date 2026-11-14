@@ -1,6 +1,16 @@
 //! Delivering a finished pass (`passes`) as a layout: installing it, matching units to spans, warming the live engine, and the `LayoutUpdate` event.
 
-use super::*;
+use super::diag::*;
+use super::events::*;
+use super::state::*;
+use crate::document::{FileBuf, ParaId, Revision};
+use crate::eligibility::{
+    check_engine_unit, classify_source, classify_source_with, runs_into_title, UnitShape,
+};
+use crate::layout::{LayoutStore, SnapshotSpan};
+use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 pub(super) fn layout_failed(s: &Shared, t0: Instant, rev: Revision, msg: String) {
     s.events

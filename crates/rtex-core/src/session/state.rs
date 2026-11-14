@@ -1,6 +1,20 @@
 //! State the session's threads share: the request to the live engine, the link to it, the background commands.
 
-use super::*;
+use super::config::*;
+use super::events::*;
+use super::live::*;
+use crate::background::WarmEngine;
+use crate::document::{FileBuf, IdAllocator, ParaId, Revision};
+use crate::eligibility::Policy;
+use crate::layout::LayoutStore;
+use crate::texlive::TexLive;
+use crossbeam_channel::{Receiver, Sender};
+use parking_lot::Mutex;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::Arc;
+use std::time::Instant;
 
 /// Outcome of a probe compile (probe mode).
 #[derive(Debug, Clone)]

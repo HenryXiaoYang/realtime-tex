@@ -1,6 +1,7 @@
 //! What `rtex verify` takes and reports: its options, a verdict per unit and per page, and the whole report (`--json-out`).
 
-use super::*;
+use serde::Serialize;
+use std::path::PathBuf;
 
 pub struct VerifyOpts {
     pub project: PathBuf,

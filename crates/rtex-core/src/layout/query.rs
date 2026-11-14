@@ -1,6 +1,10 @@
 //! Reading the current layout: a unit by id, the span a unit maps to, and the fragments (page, rows, baselines) where a unit's live result goes.
 
-use super::*;
+use super::compare::*;
+use super::{snapshot_spans_of, EngineUnit, Fragment, LayoutStore, SnapshotSpan};
+use crate::capture::{CaptureResult, Placement};
+use crate::document::ParaId;
+use rtex_dl::{DisplayList, Sp};
 
 impl LayoutStore {
     pub fn unit(&self, id: ParaId) -> Option<&EngineUnit> {
