@@ -264,6 +264,12 @@ fn decimals_of(o: &Object) -> usize {
     }
 }
 
+/// The glyphs, rules and images of every page of a PDF, with their positions, read from the
+/// pages' content streams.
+///
+/// Long on purpose: it interprets the content stream, one `match` arm per PDF operator, over
+/// the graphics and text state (CTM stack, text matrices, font, spacing, the current path) kept
+/// in locals for the page.
 pub fn extract(path: &Path) -> Result<Vec<PdfPage>> {
     let doc = Document::load(path).with_context(|| format!("loading {}", path.display()))?;
     let mut pages = Vec::new();
