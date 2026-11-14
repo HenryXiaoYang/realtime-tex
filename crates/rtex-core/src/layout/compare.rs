@@ -11,17 +11,7 @@ pub fn compare_unit_rows(
     pages: &[(i64, &DisplayList)],
     uids: &[i64],
 ) -> (usize, usize, Vec<String>) {
-    // rows of every member unit (a composite unit is several capture units), in member order
-    let mut keyed: Vec<((usize, i64), i64, &Line)> = Vec::new();
-    for (k, uid) in uids.iter().enumerate() {
-        for (pno, page) in pages {
-            for l in page.rows_of(*uid) {
-                keyed.push(((k, l.row), *pno, l));
-            }
-        }
-    }
-    keyed.sort_by_key(|(key, _, _)| *key);
-    let ref_rows: Vec<(i64, &Line)> = keyed.into_iter().map(|(_, pno, l)| (pno, l)).collect();
+    let ref_rows = reference_rows(pages, uids);
     let mut notes = Vec::new();
     if ref_rows.len() != fast.lines.len() {
         notes.push(format!(
@@ -163,4 +153,20 @@ pub fn compare_unit_rows(
         }
     }
     (same, total, notes)
+}
+
+/// The rows the pass captured for a unit, with their pages.
+fn reference_rows<'a>(pages: &'a [(i64, &'a DisplayList)], uids: &[i64]) -> Vec<(i64, &'a Line)> {
+    // rows of every member unit (a composite unit is several capture units), in member order
+    let mut keyed: Vec<((usize, i64), i64, &Line)> = Vec::new();
+    for (k, uid) in uids.iter().enumerate() {
+        for (pno, page) in pages {
+            for l in page.rows_of(*uid) {
+                keyed.push(((k, l.row), *pno, l));
+            }
+        }
+    }
+    keyed.sort_by_key(|(key, _, _)| *key);
+    let ref_rows: Vec<(i64, &Line)> = keyed.into_iter().map(|(_, pno, l)| (pno, l)).collect();
+    ref_rows
 }
