@@ -81,67 +81,12 @@ impl FileBuf {
         self.text.replace_range(start..end, &edit.text);
         // incremental line-start table: drop entries inside the replaced range, shift the rest,
         // insert the newlines of the inserted text
-        let first_after = self.line_starts.partition_point(|&p| p <= start);
-        let last_removed = self.line_starts.partition_point(|&p| p <= end);
-        let inserted: Vec<usize> = edit
-            .text
-            .bytes()
-            .enumerate()
-            .filter(|(_, b)| *b == b'\n')
-            .map(|(i, _)| start + i + 1)
-            .collect();
-        let shifted_from = first_after + inserted.len();
-        // in place: a keystroke without a newline moves no entry, it only shifts the tail
-        self.line_starts.splice(first_after..last_removed, inserted);
-        if delta != 0 {
-            for p in &mut self.line_starts[shifted_from..] {
-                *p = (*p as i64 + delta) as usize;
-            }
-        }
-        debug_assert_eq!(self.line_starts, compute_line_starts(&self.text));
+        self.splice_line_starts(edit, start, end, delta);
         // Windowed re-segmentation: body spans are delimited by blank lines (environments are kept
         // whole), so re-segmenting from the start of the span before the edit to the end of the
         // span after it reproduces exactly what a full pass would produce there. Edits touching
         // the preamble, the trailer or no span at all fall back to a full pass.
-        // spans touched by the edit, or (for an edit in a gap between spans) its neighbours
-        let touches = |sp: &Span| sp.range.start <= end && start <= sp.range.end;
-        let first_touched = old_spans
-            .iter()
-            .position(touches)
-            .or_else(|| old_spans.iter().rposition(|sp| sp.range.end <= start));
-        let last_touched = old_spans
-            .iter()
-            .rposition(touches)
-            .or_else(|| old_spans.iter().position(|sp| sp.range.start >= end));
-        // The window is bounded by the neighbouring spans; when a neighbour is the preamble or
-        // the trailer the window starts (ends) at the body boundary instead, which is fixed.
-        let window: Option<(usize, usize)> = match (first_touched, last_touched) {
-            (Some(a), Some(b)) if a <= b && a > 0 && b + 1 < old_spans.len() => {
-                let (lo, hi) = (a - 1, b + 1);
-                let lo_ok = matches!(
-                    old_spans[lo].kind,
-                    SpanKind::Body | SpanKind::Heading | SpanKind::Env | SpanKind::Preamble
-                );
-                let hi_ok = matches!(
-                    old_spans[hi].kind,
-                    SpanKind::Body | SpanKind::Heading | SpanKind::Env | SpanKind::Trailer
-                );
-                let mid_ok = old_spans[a..=b].iter().all(|sp| {
-                    matches!(sp.kind, SpanKind::Body | SpanKind::Heading | SpanKind::Env)
-                });
-                if lo_ok
-                    && hi_ok
-                    && mid_ok
-                    && !edit.text.contains("\\begin{document}")
-                    && !edit.text.contains("\\end{document}")
-                {
-                    Some((lo, hi))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
+        let window = Self::resegment_window(&old_spans, edit, start, end);
         // The new units are the old spans before the window (`head` of them), the window's
         // own units (`mid`) and the old spans from `tail_from` on, shifted by the edit; a full
         // pass is all `mid`. Only the window is materialized and the span table is updated in
@@ -217,12 +162,112 @@ impl FileBuf {
                 .collect();
             (head, tail_from) = (0, old_len);
         }
-        let mut outcome = EditOutcome::default();
-        let mut mid_spans = Vec::new();
         let old_mid = &old_spans[prefix..old_len - suffix];
         let new_mid: Vec<(Range<usize>, SpanKind)> = (prefix..new_len - suffix)
             .map(|i| unit(i, head, &mid, tail_from))
             .collect();
+        let (outcome, mid_spans) = self.changed_spans(old_mid, &new_mid, ids, rev);
+        // the matched prefix stays as it is; the matched suffix keeps ids, hashes and revisions
+        // with the new ranges and kinds
+        let mut spans = old_spans;
+        for k in 0..suffix {
+            let (i, j) = (old_len - suffix + k, new_len - suffix + k);
+            let sp = &mut spans[i];
+            if j >= head + mid.len() {
+                sp.range = shift(&sp.range);
+            } else {
+                (sp.range, sp.kind) = mid[j - head].clone();
+            }
+        }
+        spans.splice(prefix..old_len - suffix, mid_spans);
+        self.spans = spans;
+        outcome
+    }
+
+    /// The line-start table after the text was spliced: entries inside the replaced range go,
+    /// the newlines of the inserted text come in, the tail shifts by `delta`.
+    fn splice_line_starts(&mut self, edit: &Edit, start: usize, end: usize, delta: i64) {
+        let first_after = self.line_starts.partition_point(|&p| p <= start);
+        let last_removed = self.line_starts.partition_point(|&p| p <= end);
+        let inserted: Vec<usize> = edit
+            .text
+            .bytes()
+            .enumerate()
+            .filter(|(_, b)| *b == b'\n')
+            .map(|(i, _)| start + i + 1)
+            .collect();
+        let shifted_from = first_after + inserted.len();
+        // in place: a keystroke without a newline moves no entry, it only shifts the tail
+        self.line_starts.splice(first_after..last_removed, inserted);
+        if delta != 0 {
+            for p in &mut self.line_starts[shifted_from..] {
+                *p = (*p as i64 + delta) as usize;
+            }
+        }
+        debug_assert_eq!(self.line_starts, compute_line_starts(&self.text));
+    }
+
+    /// The old spans (first and last index) that bound what an edit of `start..end` can change,
+    /// or None when the whole file must be segmented again.
+    fn resegment_window(
+        old_spans: &[Span],
+        edit: &Edit,
+        start: usize,
+        end: usize,
+    ) -> Option<(usize, usize)> {
+        // spans touched by the edit, or (for an edit in a gap between spans) its neighbours
+        let touches = |sp: &Span| sp.range.start <= end && start <= sp.range.end;
+        let first_touched = old_spans
+            .iter()
+            .position(touches)
+            .or_else(|| old_spans.iter().rposition(|sp| sp.range.end <= start));
+        let last_touched = old_spans
+            .iter()
+            .rposition(touches)
+            .or_else(|| old_spans.iter().position(|sp| sp.range.start >= end));
+        // The window is bounded by the neighbouring spans; when a neighbour is the preamble or
+        // the trailer the window starts (ends) at the body boundary instead, which is fixed.
+        let window: Option<(usize, usize)> = match (first_touched, last_touched) {
+            (Some(a), Some(b)) if a <= b && a > 0 && b + 1 < old_spans.len() => {
+                let (lo, hi) = (a - 1, b + 1);
+                let lo_ok = matches!(
+                    old_spans[lo].kind,
+                    SpanKind::Body | SpanKind::Heading | SpanKind::Env | SpanKind::Preamble
+                );
+                let hi_ok = matches!(
+                    old_spans[hi].kind,
+                    SpanKind::Body | SpanKind::Heading | SpanKind::Env | SpanKind::Trailer
+                );
+                let mid_ok = old_spans[a..=b].iter().all(|sp| {
+                    matches!(sp.kind, SpanKind::Body | SpanKind::Heading | SpanKind::Env)
+                });
+                if lo_ok
+                    && hi_ok
+                    && mid_ok
+                    && !edit.text.contains("\\begin{document}")
+                    && !edit.text.contains("\\end{document}")
+                {
+                    Some((lo, hi))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        window
+    }
+
+    /// The spans that replace `old_mid`, and what the edit did to them: one old span becoming
+    /// one new span keeps its id (touched); anything else is a boundary change (removed, added).
+    fn changed_spans(
+        &self,
+        old_mid: &[Span],
+        new_mid: &[(Range<usize>, SpanKind)],
+        ids: &mut IdAllocator,
+        rev: Revision,
+    ) -> (EditOutcome, Vec<Span>) {
+        let mut outcome = EditOutcome::default();
+        let mut mid_spans = Vec::new();
         if old_mid.len() == 1 && new_mid.len() == 1 {
             let o = &old_mid[0];
             let (range, kind) = new_mid[0].clone();
@@ -281,20 +326,6 @@ impl FileBuf {
                 });
             }
         }
-        // the matched prefix stays as it is; the matched suffix keeps ids, hashes and revisions
-        // with the new ranges and kinds
-        let mut spans = old_spans;
-        for k in 0..suffix {
-            let (i, j) = (old_len - suffix + k, new_len - suffix + k);
-            let sp = &mut spans[i];
-            if j >= head + mid.len() {
-                sp.range = shift(&sp.range);
-            } else {
-                (sp.range, sp.kind) = mid[j - head].clone();
-            }
-        }
-        spans.splice(prefix..old_len - suffix, mid_spans);
-        self.spans = spans;
-        outcome
+        (outcome, mid_spans)
     }
 }
