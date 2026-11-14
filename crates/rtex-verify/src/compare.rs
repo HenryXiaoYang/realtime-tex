@@ -207,9 +207,22 @@ pub fn compare_page(
         db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
     });
     rep.worst = diffs.into_iter().take(5).collect();
-    // rules
+    compare_rules(dl, pdf, lines, &all_lines, page_h, &mut rep);
+    rep
+}
+
+/// Every rule of the display list against the PDF page's rules: counts the exact matches and
+/// describes the others with their nearest PDF rule.
+fn compare_rules(
+    dl: &DisplayList,
+    pdf: &PdfPage,
+    lines: &[&Line],
+    all_lines: &[&Line],
+    page_h: f64,
+    rep: &mut CompareReport,
+) {
     let mut dl_rules = Vec::new();
-    for l in &all_lines {
+    for l in all_lines {
         for it in &l.items {
             if let Item::Rule {
                 x,
@@ -267,5 +280,4 @@ pub fn compare_page(
             ));
         }
     }
-    rep
 }

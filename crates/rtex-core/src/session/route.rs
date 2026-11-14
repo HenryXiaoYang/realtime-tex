@@ -1,7 +1,20 @@
 //! Routing an edited span: whether it can be compiled live, on which context (its own
 //! captured one or one borrowed from a neighbour), with which picture cache entries.
 
-use super::*;
+use super::config::*;
+use super::events::*;
+use super::live::*;
+use super::state::*;
+use super::{first_line_of, reason_str, Session};
+use crate::document::{FileBuf, ParaId, Revision, Span, SpanKind};
+use crate::eligibility::{
+    check_engine_unit, classify_source_with, everypar_allowed, runs_into_title, Policy, Reason,
+    UnitShape,
+};
+use crate::layout::{EngineUnit, LayoutStore};
+use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 impl Session {
     /// Decide the fast path for one span: the allow-list on its source, the capture facts of
@@ -25,42 +38,8 @@ impl Session {
         if matches!(span.kind, SpanKind::Preamble | SpanKind::Trailer) {
             reasons.push(format!("{:?} span", span.kind));
         }
-        let probe_mode = self.shared.cfg.eligibility == EligibilityMode::Probe;
-        let (shape, src_reasons) = classify_source_with(text, policy, false);
-        let mut needs_probe = false;
-        let mut vocab: Vec<Reason> = Vec::new();
-        for r in src_reasons {
-            if probe_mode && crate::eligibility::is_vocabulary_reason(&r) {
-                // not a verdict: the probe compile decides
-                needs_probe = true;
-                vocab.push(r);
-            } else {
-                reasons.push(reason_str(&r));
-            }
-        }
-        // read the live record once, into locals: no lock guard lives in a scrutinee (one
-        // there stays held through the whole block)
-        let (leak, internal_error, over_budget, crashes) = {
-            let mut live = self.shared.live.lock();
-            live.lift_quarantine_if_edited(span.id, span.hash);
-            (
-                live.get(span.id).and_then(|u| u.leak.clone()),
-                live.internal_error_for(span.id, layout.layout_version),
-                live.get(span.id).and_then(|u| u.over_budget),
-                live.get(span.id)
-                    .and_then(|u| u.crash)
-                    .map_or(0, |c| c.count),
-            )
-        };
-        if let Some(why) = leak {
-            reasons.push(format!("unverified: {why}"));
-        }
-        if let Some(why) = internal_error {
-            reasons.push(format!(
-                "EngineFailed: internal error, retried after the next layout ({})",
-                first_line_of(&why)
-            ));
-        }
+        let (shape, needs_probe, vocab) = self.source_refusals(text, policy, &mut reasons);
+        let (over_budget, crashes) = self.live_refusals(span, layout, &mut reasons);
         let mut seq = 0i64;
         let mut ctx: Option<serde_json::Value> = None;
         let mut expected_rows = 0i64;
@@ -102,37 +81,7 @@ impl Session {
                         }
                     }
                 }
-                let c = &eu.captured;
-                for r in check_engine_unit(
-                    &c.kind,
-                    &c.everypar,
-                    eu.has_context(),
-                    eu.rows(),
-                    &eu.flags,
-                    c.name
-                        .as_deref()
-                        .filter(|_| c.runin && !runs_into_title(text)),
-                ) {
-                    reasons.push(reason_str(&r));
-                }
-                let shape_ok = match (&shape, c.kind.as_str()) {
-                    (UnitShape::Par, "par") => true,
-                    (UnitShape::Env(n), "env") => Some(n.as_str()) == c.name.as_deref(),
-                    (UnitShape::Heading(n), "heading") => Some(n.as_str()) == c.name.as_deref(),
-                    _ => false,
-                };
-                if !shape_ok {
-                    reasons.push(reason_str(&Reason::KindMismatch));
-                }
-                if let Some((lv, ms)) = over_budget {
-                    if lv == QUARANTINED && crashes >= MAX_CRASH_RETRIES {
-                        reasons.push("EngineFailed: the live engine hung or crashed on this paragraph repeatedly; it stays on the full compile until the preamble changes".into());
-                    } else if lv == QUARANTINED {
-                        reasons.push("EngineFailed: the live engine hung or crashed on this paragraph; it stays on the full compile until it is edited after a clean full compile".into());
-                    } else if lv == layout.layout_version {
-                        reasons.push(reason_str(&Reason::OverBudget(ms)));
-                    }
-                }
+                unit_refusals(eu, text, &shape, over_budget, crashes, layout, &mut reasons);
                 seq = eu.uid;
                 expected_rows = eu.rows();
             }
@@ -405,5 +354,107 @@ impl Session {
             }
         }
         Some((parent, anchor, after, json))
+    }
+
+    /// What the allow-list says about the unit's source. In probe mode, vocabulary it does not
+    /// know is not a refusal: it is returned, and a probe compile decides.
+    fn source_refusals(
+        &self,
+        text: &str,
+        policy: &Policy,
+        reasons: &mut Vec<String>,
+    ) -> (UnitShape, bool, Vec<Reason>) {
+        let probe_mode = self.shared.cfg.eligibility == EligibilityMode::Probe;
+        let (shape, src_reasons) = classify_source_with(text, policy, false);
+        let mut needs_probe = false;
+        let mut vocab: Vec<Reason> = Vec::new();
+        for r in src_reasons {
+            if probe_mode && crate::eligibility::is_vocabulary_reason(&r) {
+                // not a verdict: the probe compile decides
+                needs_probe = true;
+                vocab.push(r);
+            } else {
+                reasons.push(reason_str(&r));
+            }
+        }
+        (shape, needs_probe, vocab)
+    }
+
+    /// What earlier compiles of the unit say: a leak or an internal error refuses it. Returns its
+    /// budget mark and crash count for `unit_refusals`.
+    fn live_refusals(
+        &self,
+        span: &Span,
+        layout: &LayoutStore,
+        reasons: &mut Vec<String>,
+    ) -> (Option<(u64, u64)>, u32) {
+        // read the live record once, into locals: no lock guard lives in a scrutinee (one
+        // there stays held through the whole block)
+        let (leak, internal_error, over_budget, crashes) = {
+            let mut live = self.shared.live.lock();
+            live.lift_quarantine_if_edited(span.id, span.hash);
+            (
+                live.get(span.id).and_then(|u| u.leak.clone()),
+                live.internal_error_for(span.id, layout.layout_version),
+                live.get(span.id).and_then(|u| u.over_budget),
+                live.get(span.id)
+                    .and_then(|u| u.crash)
+                    .map_or(0, |c| c.count),
+            )
+        };
+        if let Some(why) = leak {
+            reasons.push(format!("unverified: {why}"));
+        }
+        if let Some(why) = internal_error {
+            reasons.push(format!(
+                "EngineFailed: internal error, retried after the next layout ({})",
+                first_line_of(&why)
+            ));
+        }
+        (over_budget, crashes)
+    }
+}
+
+/// What the layout's unit says against the live path: capture facts the engine cannot replay,
+/// a shape other than the source's, a spent time budget or a quarantine.
+fn unit_refusals(
+    eu: &EngineUnit,
+    text: &str,
+    shape: &UnitShape,
+    over_budget: Option<(u64, u64)>,
+    crashes: u32,
+    layout: &LayoutStore,
+    reasons: &mut Vec<String>,
+) {
+    let c = &eu.captured;
+    for r in check_engine_unit(
+        &c.kind,
+        &c.everypar,
+        eu.has_context(),
+        eu.rows(),
+        &eu.flags,
+        c.name
+            .as_deref()
+            .filter(|_| c.runin && !runs_into_title(text)),
+    ) {
+        reasons.push(reason_str(&r));
+    }
+    let shape_ok = match (&shape, c.kind.as_str()) {
+        (UnitShape::Par, "par") => true,
+        (UnitShape::Env(n), "env") => Some(n.as_str()) == c.name.as_deref(),
+        (UnitShape::Heading(n), "heading") => Some(n.as_str()) == c.name.as_deref(),
+        _ => false,
+    };
+    if !shape_ok {
+        reasons.push(reason_str(&Reason::KindMismatch));
+    }
+    if let Some((lv, ms)) = over_budget {
+        if lv == QUARANTINED && crashes >= MAX_CRASH_RETRIES {
+            reasons.push("EngineFailed: the live engine hung or crashed on this paragraph repeatedly; it stays on the full compile until the preamble changes".into());
+        } else if lv == QUARANTINED {
+            reasons.push("EngineFailed: the live engine hung or crashed on this paragraph; it stays on the full compile until it is edited after a clean full compile".into());
+        } else if lv == layout.layout_version {
+            reasons.push(reason_str(&Reason::OverBudget(ms)));
+        }
     }
 }

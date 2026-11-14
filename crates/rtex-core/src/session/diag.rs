@@ -1,6 +1,9 @@
 //! Diagnostics: debug bundles for engine failures, the live request log, TeX log parsing.
 
-use super::*;
+use super::events::*;
+use super::state::*;
+use crate::engine::FastServer;
+use std::path::{Path, PathBuf};
 
 /// With `SessionConfig::debug_dir`: write everything needed to reproduce an engine failure
 /// into `<debug_dir>/engine-<time>-g<generation>-par<id>/` and return that directory.

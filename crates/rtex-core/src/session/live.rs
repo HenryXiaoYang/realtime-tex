@@ -12,7 +12,9 @@
 //!   after the unit hung or crashed the engine (lifted earlier once it is edited after a clean
 //!   pass, see `lift_quarantine_if_edited`), over-budget strikes.
 
-use super::*;
+use super::state::*;
+use crate::document::{ParaId, Revision};
+use std::collections::{BTreeMap, HashMap};
 
 /// An over-budget mark that is not tied to a layout version: the unit hung or crashed the
 /// engine and stays on the full compile until it is edited after a clean pass (or, after

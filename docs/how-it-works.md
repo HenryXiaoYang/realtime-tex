@@ -208,16 +208,16 @@ background path.
 
 | Piece | File |
 |---|---|
-| Session API, shared state | `crates/rtex-core/src/session/mod.rs` |
-| Splitting files into spans | `crates/rtex-core/src/document.rs` |
-| Live or background, borrowed contexts | `crates/rtex-core/src/session/route.rs`, `eligibility.rs` |
-| The live engine process and its channel | `crates/rtex-core/src/engine.rs`, `transport.rs` |
-| Turning engine results into updates | `crates/rtex-core/src/session/engine_loop.rs` |
-| Background passes, standby engine | `crates/rtex-core/src/session/passes.rs`, `background.rs` |
-| Layouts, placements | `crates/rtex-core/src/layout.rs` |
-| Picture cache | `crates/rtex-core/src/piccache.rs`, `tex/rtex-pic.lua` |
-| Live engine (Lua side) | `tex/rtex-serve.lua`, `tex/latex/rtex-serve-patches.tex` |
-| Node list → display list | `tex/rtex-dl.lua`, `tex/rtex-dl-bin.lua` |
-| Capture package | `tex/latex/rtex-capture.sty`, `tex/rtex-capture.lua` |
+| Session API, shared state | `crates/rtex-core/src/session/mod.rs` (`Session`), `config.rs`, `events.rs`, `edit.rs` (applying an edit), `state.rs` |
+| Splitting files into spans | `crates/rtex-core/src/document/` (types in `mod.rs`, `segment.rs`, `buffer.rs` for edits in place, `inputs.rs` for `\input`) |
+| Live or background, borrowed contexts | `crates/rtex-core/src/session/route.rs`, `eligibility/` (entry points in `mod.rs`, the scanner in `scan*.rs`, the allow-lists in `vocab_*.rs`) |
+| The live engine process and its channel | `crates/rtex-core/src/engine/` (`FastServer` in `mod.rs`, `protocol.rs`), `transport.rs` |
+| The engine thread; turning engine results into updates | `crates/rtex-core/src/session/engine_loop.rs`, `engine_server.rs`, `engine_results.rs` |
+| Background passes, standby engine | `crates/rtex-core/src/session/passes.rs`, `pass_standby.rs`, `pass_deliver.rs`, `export.rs`, `background/` (the pass loop in `mod.rs`, `snapshot.rs`, `auxfiles.rs`, `index.rs`, `standby.rs`) |
+| Layouts, placements | `crates/rtex-core/src/layout/` (types in `mod.rs`, `install.rs`, `query.rs`, `compare.rs`) |
+| Picture cache | `crates/rtex-core/src/piccache/` (`scan.rs` finds pictures, `cacheable.rs` decides, `store.rs` keeps them), `tex/rtex-pic.lua` |
+| Live engine (Lua side) | `tex/rtex-serve.lua` (requests, compiles, results), `tex/rtex-serve-context.lua` (the fingerprint and context replay), `tex/rtex-serve-source.lua`, `tex/rtex-serve-profile.lua`, `tex/latex/rtex-serve-patches.tex` |
+| Node list → display list | `tex/rtex-dl.lua` (entry points, the state and its sinks), `tex/rtex-dl-walk.lua` (the box traversal), `tex/rtex-dl-fonts.lua` (fonts and TeX's rounding), `tex/rtex-dl-bin.lua` |
+| Capture package | `tex/latex/rtex-capture.sty`, `tex/rtex-capture.lua` (units, counters and macros, shipout), `tex/rtex-capture-linebreak.lua`, `tex/rtex-capture-pics.lua` |
 
 The live engine's wire protocol is described in [engine-protocol.md](engine-protocol.md).

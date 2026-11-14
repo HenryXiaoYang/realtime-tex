@@ -92,7 +92,10 @@ node.direct = node.direct or setmetatable({
 node.type = node.type or function(id) return node.types()[id] end
 font = font or { getfont = function() return nil end }
 tex = tex or { hoffset = 0, voffset = 0, pagewidth = 0, pageheight = 0 }
+-- rtex-dl.lua loads rtex-dl-fonts.lua and rtex-dl-walk.lua through kpse
+kpse.find_file = function(name) return "tex/" .. name end
 local dl = dofile("tex/rtex-dl.lua")
+kpse.find_file = find_file
 check("tex_round positive", dl.tex_round(2.5) == 3 and dl.tex_round(2.4999) == 2)
 check("tex_round negative", dl.tex_round(-2.5) == -3 and dl.tex_round(-2.4999) == -2)
 -- round_xn_over_d against exact rational rounding

@@ -152,8 +152,19 @@ pub fn run(project: PathBuf, main: String, n: usize, build: PathBuf) -> Result<(
     }
     server.shutdown()?;
 
-    // session-level: the same edits through apply_edit/poll
-    let mut cfg = SessionConfig::new(&project, main.clone());
+    session_round_trips(&project, &main, n, &build)?;
+    Ok(())
+}
+
+/// Session level: the layouts a session delivers when it opens, then the same edits as above
+/// through `apply_edit` and `poll`, for a short, a medium and a long paragraph.
+fn session_round_trips(
+    project: &std::path::Path,
+    main: &str,
+    n: usize,
+    build: &std::path::Path,
+) -> Result<()> {
+    let mut cfg = SessionConfig::new(project, main);
     cfg.build_dir = build.join("session");
     let session = Session::open(cfg)?;
     let (first, _) = session.wait_for(Duration::from_secs(600), |e| {
@@ -186,8 +197,8 @@ pub fn run(project: PathBuf, main: String, n: usize, build: PathBuf) -> Result<(
     println!("layout: first {first_ms} ms ({first_passes} passes), second with standby engine {second_ms} ms ({second_passes} passes)");
     session.pause_background(true);
     std::thread::sleep(Duration::from_millis(1500));
-    let spans = session.spans(&main);
-    let doc = session.document_text(&main).unwrap();
+    let spans = session.spans(main);
+    let doc = session.document_text(main).unwrap();
     for (name, want) in [("short", 1usize), ("medium", 4), ("long", 10)] {
         let Some(pl) = placements.iter().find(|p| {
             eligible_paragraphs.contains(&p.par_id)
@@ -217,7 +228,7 @@ pub fn run(project: PathBuf, main: String, n: usize, build: PathBuf) -> Result<(
             };
             toggled = !toggled;
             let t0 = Instant::now();
-            let r = session.apply_edit(&main, edit)?;
+            let r = session.apply_edit(main, edit)?;
             let t_apply = t0.elapsed();
             if r.routed != "fast" {
                 bail!("not fast: {:?}", r.reasons);
