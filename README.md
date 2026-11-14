@@ -53,16 +53,16 @@ Time from keystroke to the updated paragraph in the editor's hands (median of 30
 
 | Paragraph | 10-page document | 100 pages | 300 pages |
 |---|---|---|---|
-| one line | 0.29 ms | 0.32 ms | 0.37 ms |
-| four lines | 0.66 ms | 0.93 ms | 0.88 ms |
-| ten lines | — | 1.65 ms | 1.55 ms |
-| a list, a figure, a table, display math | 0.9–1.5 ms | 1.1–1.9 ms | |
+| one line | 0.50 ms | 0.54 ms | 0.50 ms |
+| four lines | 0.91 ms | 1.12 ms | 1.11 ms |
+| ten lines | — | 1.78 ms | 1.78 ms |
+| a list, a figure, a table, display math | 1.2–1.7 ms | 1.6–1.9 ms | |
 
 Document length does not matter, only the paragraph does. The font setup matters too. With
 fontspec's default OpenType shaping, a long paragraph takes up to 4–5× longer than with TFM fonts
 or `Renderer=Basic` ([why](docs/live-editing.md#making-it-faster)).
 
-Typed into the same document, a paragraph updates in 1.3–1.6 ms with rtex, 18 ms (10 pages) to 414 ms (300 pages) with Typst 0.15.1, and a full LuaLaTeX run takes 0.5–1.7 s. That full run is what Overleaf repeats on every recompile ([comparison](docs/benchmarks.md#compared-with-typst-and-overleaf)).
+Typed into the same document, a paragraph updates in 1.4–1.5 ms with rtex, 19 ms (10 pages) to 455 ms (300 pages) with Typst 0.15.1, and a full LuaLaTeX run takes 0.5–1.7 s. That full run is what Overleaf repeats on every recompile ([comparison](docs/benchmarks.md#compared-with-typst-and-overleaf)).
 
 ## What updates live
 

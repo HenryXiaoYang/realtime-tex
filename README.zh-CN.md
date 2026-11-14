@@ -50,15 +50,15 @@ LuaLaTeX 进程，然后把排好的新行交给编辑器绘制。完整编译�
 
 | 段落 | 10 页文档 | 100 页 | 300 页 |
 |---|---|---|---|
-| 一行 | 0.29 ms | 0.32 ms | 0.37 ms |
-| 四行 | 0.66 ms | 0.93 ms | 0.88 ms |
-| 十行 | — | 1.65 ms | 1.55 ms |
-| 列表、图、表、行间公式 | 0.9–1.5 ms | 1.1–1.9 ms | |
+| 一行 | 0.50 ms | 0.54 ms | 0.50 ms |
+| 四行 | 0.91 ms | 1.12 ms | 1.11 ms |
+| 十行 | — | 1.78 ms | 1.78 ms |
+| 列表、图、表、行间公式 | 1.2–1.7 ms | 1.6–1.9 ms | |
 
 耗时与文档长度无关，只取决于段落本身。字体设置也有影响：使用 fontspec 默认的 OpenType 字形处理时，
 长段落的耗时最多可达 TFM 字体或 `Renderer=Basic` 的 4–5 倍（[原因](docs/live-editing.md#making-it-faster)）。
 
-在同一份文档中编辑一个段落：rtex 需要 1.3–1.6 ms，Typst 0.15.1 需要 18 ms（10 页）到 414 ms（300 页），而一次完整的 LuaLaTeX 编译需要 0.5–1.7 s。Overleaf 每次重新编译都要重复这样一次完整编译（[对比](docs/benchmarks.md#compared-with-typst-and-overleaf)）。
+在同一份文档中编辑一个段落：rtex 需要 1.4–1.5 ms，Typst 0.15.1 需要 19 ms（10 页）到 455 ms（300 页），而一次完整的 LuaLaTeX 编译需要 0.5–1.7 s。Overleaf 每次重新编译都要重复这样一次完整编译（[对比](docs/benchmarks.md#compared-with-typst-and-overleaf)）。
 
 ## 哪些内容会实时更新
 
