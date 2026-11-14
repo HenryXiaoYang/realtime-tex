@@ -88,36 +88,7 @@ pub fn run(
         };
         let cmd = v.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
         let reply = match cmd {
-            "edit" => {
-                let path = v
-                    .get("path")
-                    .and_then(|p| p.as_str())
-                    .unwrap_or("main.tex")
-                    .to_string();
-                // a missing offset is 0; a negative or fractional one is an error, not 0
-                let offset = |k: &str| match v.get(k) {
-                    None => Ok(0),
-                    Some(x) => x
-                        .as_u64()
-                        .map(|n| n as usize)
-                        .ok_or_else(|| anyhow::anyhow!("bad {k} offset {x}")),
-                };
-                let edit = offset("start").and_then(|start_byte| {
-                    Ok(Edit {
-                        start_byte,
-                        end_byte: offset("end")?,
-                        text: v
-                            .get("text")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                    })
-                });
-                match edit.and_then(|edit| session.apply_edit(&path, edit)) {
-                    Ok(r) => serde_json::json!({"reply": "edit", "result": r}),
-                    Err(e) => serde_json::json!({"reply": "error", "message": e.to_string()}),
-                }
-            }
+            "edit" => edit_command(&session, &v),
             "set_document" => {
                 let path = v
                     .get("path")
@@ -168,6 +139,39 @@ pub fn run(
         tx.send(reply.to_string()).ok();
     }
     Ok(())
+}
+
+/// The `edit` command: byte offsets `start` and `end` (0 when absent) and the `text` that
+/// replaces them, applied to `path`.
+fn edit_command(session: &Session, v: &serde_json::Value) -> serde_json::Value {
+    let path = v
+        .get("path")
+        .and_then(|p| p.as_str())
+        .unwrap_or("main.tex")
+        .to_string();
+    // a missing offset is 0; a negative or fractional one is an error, not 0
+    let offset = |k: &str| match v.get(k) {
+        None => Ok(0),
+        Some(x) => x
+            .as_u64()
+            .map(|n| n as usize)
+            .ok_or_else(|| anyhow::anyhow!("bad {k} offset {x}")),
+    };
+    let edit = offset("start").and_then(|start_byte| {
+        Ok(Edit {
+            start_byte,
+            end_byte: offset("end")?,
+            text: v
+                .get("text")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+    });
+    match edit.and_then(|edit| session.apply_edit(&path, edit)) {
+        Ok(r) => serde_json::json!({"reply": "edit", "result": r}),
+        Err(e) => serde_json::json!({"reply": "error", "message": e.to_string()}),
+    }
 }
 
 /// `rtex edit`: open a session, wait for the first layout, apply one edit, print the paragraph

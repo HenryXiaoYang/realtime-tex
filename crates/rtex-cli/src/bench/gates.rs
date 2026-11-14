@@ -13,6 +13,10 @@ pub struct Gate {
     pub note: String,
 }
 
+/// Checks a report against the limits and records each as a `Gate`.
+///
+/// Long because it is a list: each block states one limit (its name, value and bound), in the
+/// order the report prints them.
 pub fn gates(report: &mut BenchReport) {
     let h = report.hardware_factor.max(1.0);
     let mut gates = Vec::new();
