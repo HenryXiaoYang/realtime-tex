@@ -1,0 +1,656 @@
+{
+  "machine": "Intel(R) Xeon(R) Processor @ 2.10GHz (4 threads)",
+  "hardware_factor": 1.187142857142857,
+  "linebreak_ms": {
+    "display-math": [
+      0.122,
+      0.124
+    ],
+    "inline-math": [
+      0.22,
+      0.291
+    ],
+    "long": [
+      2.245,
+      2.535
+    ],
+    "medium": [
+      0.831,
+      1.185
+    ],
+    "short": [
+      0.065,
+      0.074
+    ]
+  },
+  "results": [
+    {
+      "project": "book-300-pure-lmtfm",
+      "category": "short",
+      "par_id": 779,
+      "lines": 1,
+      "glyphs": 34,
+      "individual_total": {
+        "n": 300,
+        "median": 0.550438,
+        "p5": 0.439202,
+        "p95": 0.679365,
+        "min": 0.307987,
+        "max": 2.901672
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 0.164,
+        "p5": 0.13,
+        "p95": 0.213,
+        "min": 0.089,
+        "max": 0.69
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.073,
+        "p5": 0.058,
+        "p95": 0.111,
+        "min": 0.044,
+        "max": 0.323
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 0.20902752,
+        "p5": 0.18926358000000001,
+        "p95": 0.35408611,
+        "min": 0.18912047,
+        "max": 0.46547089999999997
+      },
+      "overhead_share_median": 0.7020554540202529
+    },
+    {
+      "project": "book-300-pure-lmtfm",
+      "category": "medium",
+      "par_id": 798,
+      "lines": 4,
+      "glyphs": 229,
+      "individual_total": {
+        "n": 300,
+        "median": 1.178311,
+        "p5": 0.889594,
+        "p95": 1.610691,
+        "min": 0.721313,
+        "max": 9.671373
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 0.571,
+        "p5": 0.422,
+        "p95": 0.776,
+        "min": 0.38,
+        "max": 1.351
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.236,
+        "p5": 0.182,
+        "p95": 0.362,
+        "min": 0.168,
+        "max": 0.677
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 0.8084303199999999,
+        "p5": 0.70301846,
+        "p95": 1.16428291,
+        "min": 0.6981187099999999,
+        "max": 1.5342068599999998
+      },
+      "overhead_share_median": 0.5154080713835313
+    },
+    {
+      "project": "book-300-pure-lmtfm",
+      "category": "long",
+      "par_id": 823,
+      "lines": 11,
+      "glyphs": 639,
+      "individual_total": {
+        "n": 300,
+        "median": 2.014269,
+        "p5": 1.611665,
+        "p95": 3.828272,
+        "min": 1.250176,
+        "max": 11.462073
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 1.0,
+        "p5": 0.803,
+        "p95": 1.338,
+        "min": 0.667,
+        "max": 1.761
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.575,
+        "p5": 0.428,
+        "p95": 1.22,
+        "min": 0.349,
+        "max": 9.473
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 1.8177994499999999,
+        "p5": 1.4560479800000001,
+        "p95": 2.3493713499999997,
+        "min": 1.33886015,
+        "max": 2.46925263
+      },
+      "overhead_share_median": 0.5035419797455057
+    },
+    {
+      "project": "book-300-pure-lmtfm",
+      "category": "inline-math",
+      "par_id": 796,
+      "lines": 3,
+      "glyphs": 139,
+      "individual_total": {
+        "n": 300,
+        "median": 1.004716,
+        "p5": 0.811902,
+        "p95": 1.580762,
+        "min": 0.711294,
+        "max": 7.9411689999999995
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 0.448,
+        "p5": 0.342,
+        "p95": 0.681,
+        "min": 0.306,
+        "max": 4.376
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.184,
+        "p5": 0.148,
+        "p95": 0.363,
+        "min": 0.139,
+        "max": 1.543
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 0.74007255,
+        "p5": 0.5483227,
+        "p95": 1.36078067,
+        "min": 0.54803038,
+        "max": 1.6127230399999999
+      },
+      "overhead_share_median": 0.5541028509548968
+    },
+    {
+      "project": "book-300-pure-base",
+      "category": "short",
+      "par_id": 779,
+      "lines": 1,
+      "glyphs": 34,
+      "individual_total": {
+        "n": 300,
+        "median": 0.565878,
+        "p5": 0.447019,
+        "p95": 0.7181649999999999,
+        "min": 0.356442,
+        "max": 1.38219
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 0.167,
+        "p5": 0.123,
+        "p95": 0.228,
+        "min": 0.088,
+        "max": 0.919
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.079,
+        "p5": 0.062,
+        "p95": 0.122,
+        "min": 0.048,
+        "max": 0.622
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 0.22793607000000002,
+        "p5": 0.20170440000000003,
+        "p95": 0.66323538,
+        "min": 0.19791850999999996,
+        "max": 0.7034129899999999
+      },
+      "overhead_share_median": 0.7048833847578453
+    },
+    {
+      "project": "book-300-pure-base",
+      "category": "medium",
+      "par_id": 798,
+      "lines": 4,
+      "glyphs": 229,
+      "individual_total": {
+        "n": 300,
+        "median": 1.180365,
+        "p5": 0.943405,
+        "p95": 1.50019,
+        "min": 0.865863,
+        "max": 2.05071
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 0.592,
+        "p5": 0.477,
+        "p95": 0.781,
+        "min": 0.412,
+        "max": 1.135
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.22,
+        "p5": 0.167,
+        "p95": 0.294,
+        "min": 0.151,
+        "max": 0.398
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 1.1106204499999999,
+        "p5": 0.80582111,
+        "p95": 1.85170532,
+        "min": 0.78925128,
+        "max": 1.91468697
+      },
+      "overhead_share_median": 0.4984602220499592
+    },
+    {
+      "project": "book-300-pure-base",
+      "category": "long",
+      "par_id": 823,
+      "lines": 11,
+      "glyphs": 640,
+      "individual_total": {
+        "n": 300,
+        "median": 2.2070629999999998,
+        "p5": 1.94454,
+        "p95": 5.021607,
+        "min": 1.8000880000000001,
+        "max": 25.903476
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 1.232,
+        "p5": 1.1,
+        "p95": 1.797,
+        "min": 1.041,
+        "max": 7.255
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.547,
+        "p5": 0.466,
+        "p95": 2.769,
+        "min": 0.434,
+        "max": 6.778
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 2.14477851,
+        "p5": 1.8056389000000002,
+        "p95": 2.8579627400000005,
+        "min": 1.73494924,
+        "max": 4.25479173
+      },
+      "overhead_share_median": 0.44179210108637584
+    },
+    {
+      "project": "book-300-pure-base",
+      "category": "inline-math",
+      "par_id": 796,
+      "lines": 3,
+      "glyphs": 139,
+      "individual_total": {
+        "n": 300,
+        "median": 1.086457,
+        "p5": 0.855939,
+        "p95": 1.342577,
+        "min": 0.7709400000000001,
+        "max": 3.7548529999999998
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 0.499,
+        "p5": 0.383,
+        "p95": 0.612,
+        "min": 0.332,
+        "max": 0.999
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.191,
+        "p5": 0.141,
+        "p95": 0.275,
+        "min": 0.132,
+        "max": 1.233
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 0.8894990799999999,
+        "p5": 0.6617435300000001,
+        "p95": 1.34482409,
+        "min": 0.60598998,
+        "max": 2.96355483
+      },
+      "overhead_share_median": 0.5407089281950413
+    },
+    {
+      "project": "book-300-pure",
+      "category": "short",
+      "par_id": 779,
+      "lines": 1,
+      "glyphs": 34,
+      "individual_total": {
+        "n": 300,
+        "median": 0.804654,
+        "p5": 0.6068910000000001,
+        "p95": 0.9771999999999998,
+        "min": 0.39162399999999997,
+        "max": 2.8551800000000003
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 0.415,
+        "p5": 0.294,
+        "p95": 0.525,
+        "min": 0.22,
+        "max": 0.845
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.077,
+        "p5": 0.058,
+        "p95": 0.122,
+        "min": 0.046,
+        "max": 0.925
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 0.44821925999999995,
+        "p5": 0.39907651,
+        "p95": 0.59585656,
+        "min": 0.38818390999999997,
+        "max": 0.8271584299999999
+      },
+      "overhead_share_median": 0.48425037345244043
+    },
+    {
+      "project": "book-300-pure",
+      "category": "medium",
+      "par_id": 798,
+      "lines": 4,
+      "glyphs": 229,
+      "individual_total": {
+        "n": 300,
+        "median": 3.632758,
+        "p5": 3.1147050000000003,
+        "p95": 4.089843,
+        "min": 2.966164,
+        "max": 5.056051
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 2.967,
+        "p5": 2.591,
+        "p95": 3.318,
+        "min": 2.435,
+        "max": 4.204
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.224,
+        "p5": 0.184,
+        "p95": 0.3,
+        "min": 0.173,
+        "max": 0.954
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 3.46784103,
+        "p5": 2.9508491599999997,
+        "p95": 4.23042096,
+        "min": 2.88384222,
+        "max": 4.49856143
+      },
+      "overhead_share_median": 0.18326516657591832
+    },
+    {
+      "project": "book-300-pure",
+      "category": "long",
+      "par_id": 823,
+      "lines": 11,
+      "glyphs": 640,
+      "individual_total": {
+        "n": 300,
+        "median": 8.757155000000001,
+        "p5": 7.657811,
+        "p95": 17.216064,
+        "min": 7.376678,
+        "max": 32.549718
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 7.547,
+        "p5": 6.633,
+        "p95": 12.79,
+        "min": 6.329,
+        "max": 28.421
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.603,
+        "p5": 0.471,
+        "p95": 3.414,
+        "min": 0.414,
+        "max": 8.964
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 8.44391993,
+        "p5": 7.642701979999999,
+        "p95": 10.895684710000001,
+        "min": 7.6097312,
+        "max": 11.17448855
+      },
+      "overhead_share_median": 0.13819042828407183
+    },
+    {
+      "project": "book-300-pure",
+      "category": "inline-math",
+      "par_id": 796,
+      "lines": 3,
+      "glyphs": 139,
+      "individual_total": {
+        "n": 300,
+        "median": 2.93047,
+        "p5": 2.120435,
+        "p95": 3.474816,
+        "min": 1.898137,
+        "max": 4.750983000000001
+      },
+      "individual_tex": {
+        "n": 300,
+        "median": 2.253,
+        "p5": 1.62,
+        "p95": 2.552,
+        "min": 1.477,
+        "max": 3.401
+      },
+      "individual_traverse": {
+        "n": 300,
+        "median": 0.211,
+        "p5": 0.144,
+        "p95": 0.311,
+        "min": 0.128,
+        "max": 0.384
+      },
+      "individual_pack": {
+        "n": 300,
+        "median": 0.0,
+        "p5": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "amortized_total": {
+        "n": 30,
+        "median": 2.14688516,
+        "p5": 1.9265448099999998,
+        "p95": 3.02843486,
+        "min": 1.89624982,
+        "max": 3.33109571
+      },
+      "overhead_share_median": 0.2311813463369357
+    }
+  ],
+  "gates": [
+    {
+      "name": "short amortized median ≤ 1.0 ms × h",
+      "value": 0.20902752,
+      "limit": 1.187142857142857,
+      "pass": true,
+      "note": "h = 1.19"
+    },
+    {
+      "name": "short individual median ≤ 1.5 ms × h",
+      "value": 0.550438,
+      "limit": 1.7807142857142857,
+      "pass": true,
+      "note": "P95 0.679 ms"
+    },
+    {
+      "name": "short P95 ≤ 3 × median",
+      "value": 1.23422619804592,
+      "limit": 3.0,
+      "pass": true,
+      "note": ""
+    },
+    {
+      "name": "short IPC + host overhead ≤ 0.5 ms × h",
+      "value": 0.31343799999999994,
+      "limit": 0.5935714285714285,
+      "pass": true,
+      "note": "overhead share 70 % (paper: 18 %)"
+    },
+    {
+      "name": "medium individual median ≤ 6.11 ms × h (paper reference)",
+      "value": 1.178311,
+      "limit": 7.253442857142857,
+      "pass": true,
+      "note": ""
+    },
+    {
+      "name": "medium traversal + serialization ≤ 0.5 ms",
+      "value": 0.236,
+      "limit": 0.5,
+      "pass": true,
+      "note": ""
+    },
+    {
+      "name": "medium IPC + host overhead ≤ 0.5 ms × h",
+      "value": 0.37131100000000017,
+      "limit": 0.5935714285714285,
+      "pass": true,
+      "note": "overhead share 52 % (paper: 18 %)"
+    }
+  ],
+  "pass": true
+}
