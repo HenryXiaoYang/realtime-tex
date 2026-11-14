@@ -217,7 +217,7 @@ background path.
 | Layouts, placements | `crates/rtex-core/src/layout/` (types in `mod.rs`, `install.rs`, `query.rs`, `compare.rs`) |
 | Picture cache | `crates/rtex-core/src/piccache/` (`scan.rs` finds pictures, `cacheable.rs` decides, `store.rs` keeps them), `tex/rtex-pic.lua` |
 | Live engine (Lua side) | `tex/rtex-serve.lua`, `tex/latex/rtex-serve-patches.tex` |
-| Node list → display list | `tex/rtex-dl.lua`, `tex/rtex-dl-bin.lua` |
+| Node list → display list | `tex/rtex-dl.lua` (entry points, the state and its sinks), `tex/rtex-dl-walk.lua` (the box traversal), `tex/rtex-dl-fonts.lua` (fonts and TeX's rounding), `tex/rtex-dl-bin.lua` |
 | Capture package | `tex/latex/rtex-capture.sty`, `tex/rtex-capture.lua` |
 
 The live engine's wire protocol is described in [engine-protocol.md](engine-protocol.md).
