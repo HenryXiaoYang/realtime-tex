@@ -68,31 +68,7 @@ pub(super) fn check_units(
         }
         if !reasons.is_empty() {
             for r in reasons {
-                let key = match r {
-                    rtex_core::eligibility::Reason::DisallowedMacro(m) => format!("macro \\{m}"),
-                    rtex_core::eligibility::Reason::DisallowedMathMacro(m) => {
-                        format!("math macro \\{m}")
-                    }
-                    rtex_core::eligibility::Reason::NonDefaultEverypar => format!(
-                        "NonDefaultEverypar [{}]",
-                        c.everypar.chars().take(70).collect::<String>()
-                    ),
-                    rtex_core::eligibility::Reason::KindMismatch => format!(
-                        "KindMismatch (source {:?}, capture {}:{}, text {:?})",
-                        shape,
-                        c.kind,
-                        c.name.clone().unwrap_or_default(),
-                        src.chars().take(50).collect::<String>()
-                    ),
-                    rtex_core::eligibility::Reason::NoContext => format!(
-                        "NoContext ({}:{} at line {}, text {:?})",
-                        c.kind,
-                        c.name.clone().unwrap_or_default(),
-                        c.begin_line,
-                        src.chars().take(40).collect::<String>()
-                    ),
-                    other => format!("{other:?}"),
-                };
+                let key = ineligible_key(r, c, &shape, &src);
                 *report.ineligible_reasons.entry(key).or_default() += 1;
             }
             continue;
@@ -105,22 +81,7 @@ pub(super) fn check_units(
         }
         checked += 1;
         if server.is_none() {
-            let s = FastServer::spawn(
-                tl,
-                project,
-                &opts.build.join("serve"),
-                preamble,
-                1,
-                Some(&cap.out_dir.join(format!("{}.aux", cap.jobname))),
-            )?;
-            println!("server ready in {:.2}s", s.startup.as_secs_f64());
-            let labels = rtex_core::background::read_aux_labels(
-                &cap.out_dir.join(format!("{}.aux", cap.jobname)),
-            );
-            let mut s = s;
-            if !labels.is_empty() {
-                s.set_labels(&labels)?;
-            }
+            let s = start_server(tl, project, preamble, cap, opts)?;
             server = Some(s);
         }
         let srv = server.as_mut().unwrap();
@@ -162,36 +123,7 @@ pub(super) fn check_units(
                 pnos.iter().map(|pno| (*pno, &page_cache[pno])).collect();
             let (same, total, notes) = compare_rows(fast, &pages, &eu.uids);
             if opts.dump_rows && (same != total || !notes.is_empty()) {
-                println!("--- unit {} ({}) fast rows:", eu.uid, c.kind);
-                for (k, l) in fast.lines.iter().enumerate() {
-                    println!(
-                        "  f{:2} x={} y={} w={} h={} gs={:.4}: {}",
-                        k + 1,
-                        l.x,
-                        l.y,
-                        l.w,
-                        l.h,
-                        l.gs,
-                        row_text(l)
-                    );
-                }
-                println!("--- capture rows:");
-                for uid in &eu.uids {
-                    for (_, pg) in &pages {
-                        for l in pg.rows_of(*uid) {
-                            println!(
-                                "  c{:2} x={} y={} w={} h={} gs={:.4}: {}",
-                                l.row,
-                                l.x,
-                                l.y,
-                                l.w,
-                                l.h,
-                                l.gs,
-                                row_text(l)
-                            );
-                        }
-                    }
-                }
+                dump_rows(fast, &pages, eu, c);
             }
             v.lines = fast.lines.len();
             v.glyphs_identical = same;
@@ -232,6 +164,112 @@ pub(super) fn check_units(
     if let Some(mut s) = server {
         s.shutdown()?;
     }
+    summarize_units(opts, report)
+}
+
+/// How a reason a unit is not eligible is counted in the report: by macro or environment name,
+/// with the unit's kind and text where that explains it.
+fn ineligible_key(
+    r: rtex_core::eligibility::Reason,
+    c: &rtex_core::capture::CapturedUnit,
+    shape: &UnitShape,
+    src: &str,
+) -> String {
+    let key = match r {
+        rtex_core::eligibility::Reason::DisallowedMacro(m) => format!("macro \\{m}"),
+        rtex_core::eligibility::Reason::DisallowedMathMacro(m) => {
+            format!("math macro \\{m}")
+        }
+        rtex_core::eligibility::Reason::NonDefaultEverypar => format!(
+            "NonDefaultEverypar [{}]",
+            c.everypar.chars().take(70).collect::<String>()
+        ),
+        rtex_core::eligibility::Reason::KindMismatch => format!(
+            "KindMismatch (source {:?}, capture {}:{}, text {:?})",
+            shape,
+            c.kind,
+            c.name.clone().unwrap_or_default(),
+            src.chars().take(50).collect::<String>()
+        ),
+        rtex_core::eligibility::Reason::NoContext => format!(
+            "NoContext ({}:{} at line {}, text {:?})",
+            c.kind,
+            c.name.clone().unwrap_or_default(),
+            c.begin_line,
+            src.chars().take(40).collect::<String>()
+        ),
+        other => format!("{other:?}"),
+    };
+    key
+}
+
+/// A live engine on the project's preamble, with the labels of the full run.
+fn start_server(
+    tl: &TexLive,
+    project: &Path,
+    preamble: &str,
+    cap: &rtex_core::capture::CaptureResult,
+    opts: &VerifyOpts,
+) -> Result<FastServer> {
+    let s = FastServer::spawn(
+        tl,
+        project,
+        &opts.build.join("serve"),
+        preamble,
+        1,
+        Some(&cap.out_dir.join(format!("{}.aux", cap.jobname))),
+    )?;
+    println!("server ready in {:.2}s", s.startup.as_secs_f64());
+    let labels =
+        rtex_core::background::read_aux_labels(&cap.out_dir.join(format!("{}.aux", cap.jobname)));
+    let mut s = s;
+    if !labels.is_empty() {
+        s.set_labels(&labels)?;
+    }
+    Ok(s)
+}
+
+/// `--dump-rows`: the live rows of a unit and the rows the full run captured for it.
+fn dump_rows(
+    fast: &DisplayList,
+    pages: &[(i64, &DisplayList)],
+    eu: &rtex_core::layout::EngineUnit,
+    c: &rtex_core::capture::CapturedUnit,
+) {
+    println!("--- unit {} ({}) fast rows:", eu.uid, c.kind);
+    for (k, l) in fast.lines.iter().enumerate() {
+        println!(
+            "  f{:2} x={} y={} w={} h={} gs={:.4}: {}",
+            k + 1,
+            l.x,
+            l.y,
+            l.w,
+            l.h,
+            l.gs,
+            row_text(l)
+        );
+    }
+    println!("--- capture rows:");
+    for uid in &eu.uids {
+        for (_, pg) in pages {
+            for l in pg.rows_of(*uid) {
+                println!(
+                    "  c{:2} x={} y={} w={} h={} gs={:.4}: {}",
+                    l.row,
+                    l.x,
+                    l.y,
+                    l.w,
+                    l.h,
+                    l.gs,
+                    row_text(l)
+                );
+            }
+        }
+    }
+}
+
+/// Layer 1's verdict from the units checked, and its summary on stdout.
+fn summarize_units(opts: &VerifyOpts, report: &mut Report) -> Result<()> {
     let l1_total: usize = report.paragraphs.iter().map(|p| p.glyphs_total).sum();
     let l1_same: usize = report.paragraphs.iter().map(|p| p.glyphs_identical).sum();
     let l1_bad: Vec<&ParagraphVerdict> = report
