@@ -191,8 +191,8 @@ impl LayoutStore {
     }
 
     /// Page positions for the rows of a fast result. `rows` are the (x, baseline) of each row in
-    /// the fast box's own coordinates. Within a page the rows keep the fast box's geometry,
-    /// anchored at the page's first placed row; rows beyond the cached placements continue on the
+    /// the fast box's own coordinates. Within a page column the rows keep the fast box's
+    /// geometry, anchored at the column's first placed row (one fragment per page column); rows beyond the cached placements continue on the
     /// last page (`approximate`). Returns None when the unit has no placement; the bool says
     /// whether the pagination is stale (row count differs from the layout).
     pub fn fragments(&self, id: ParaId, rows: &[(Sp, Sp)]) -> Option<(Vec<Fragment>, bool)> {
@@ -211,7 +211,13 @@ impl LayoutStore {
             let first = i;
             let mut xs = Vec::new();
             let mut baselines = Vec::new();
-            while i < placements.len() && placements[i].page == page && i < rows.len() {
+            // a placement above the previous one starts a new column (two-column pages): anchor
+            // it at its own placement, or its rows land below the previous column's
+            while i < placements.len()
+                && placements[i].page == page
+                && (i == first || placements[i].y > placements[i - 1].y)
+                && i < rows.len()
+            {
                 let (rx, ry) = rows[i];
                 xs.push(anchor.x + (rx - ax));
                 baselines.push(anchor.y + (ry - ay));
@@ -267,6 +273,51 @@ mod placement_tests {
         };
         s.pages.insert(page, dl);
         s
+    }
+
+    #[test]
+    fn a_paragraph_crossing_a_column_break_gets_one_fragment_per_column() {
+        // issue #47: one line at the bottom of the left column, the rest at the top of the right
+        let pl = |x, y| Placement {
+            page: 1,
+            x,
+            y,
+            ..Placement::default()
+        };
+        let mut s = store_with_page(1, 800);
+        s.units.push(EngineUnit {
+            uid: 1,
+            captured: crate::capture::CapturedUnit {
+                placements: vec![pl(58, 695), pl(318, 435), pl(318, 447), pl(318, 459)],
+                ..Default::default()
+            },
+            first_para: None,
+            flags: Default::default(),
+            members: vec![],
+            span: Some(ParaId(7)),
+            uids: vec![1],
+        });
+        s.by_span.insert(ParaId(7), 0);
+        // the fast box: four rows 12 apart, the first indented by 10
+        let rows = [(10, 0), (0, 12), (0, 24), (0, 36)];
+        let (frags, stale) = s.fragments(ParaId(7), &rows).unwrap();
+        assert!(!stale);
+        assert_eq!(frags.len(), 2);
+        assert_eq!((frags[0].first_line, frags[0].last_line), (1, 1));
+        assert_eq!(
+            (frags[0].xs.clone(), frags[0].baselines.clone()),
+            (vec![58], vec![695])
+        );
+        assert_eq!((frags[1].first_line, frags[1].last_line), (2, 4));
+        assert_eq!(frags[1].xs, vec![318, 318, 318]);
+        assert_eq!(frags[1].baselines, vec![435, 447, 459]);
+        assert!(s.fragments_on_page(&frags));
+        // one more row than the layout has: it continues the right column
+        let (frags, stale) = s
+            .fragments(ParaId(7), &[rows.as_slice(), &[(0, 48)]].concat())
+            .unwrap();
+        assert!(stale);
+        assert_eq!(frags[1].baselines, vec![435, 447, 459, 471]);
     }
 
     #[test]

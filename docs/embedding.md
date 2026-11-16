@@ -156,7 +156,7 @@ Events arrive in order on one queue. Every event that comes from the engine or a
 | `par_id` | the unit (span) this replaces. Remove everything this unit drew before. |
 | `status` | `ok` draw it. `ok_degraded` draw it, but something in it could not be represented: see `reasons`, and expect a pass. `error` TeX reported an error: show `diagnostics`, don't trust the display list. `removed` the span no longer exists (merged or deleted): clear it. |
 | `dl` | the unit's display list: rows of glyphs, rules and images, relative to the unit's box. |
-| `fragments` | where to draw it: one entry per page the unit spans, with the page number, the rows it holds (`first_line..last_line`) and each row's `x` and `baseline` on that page. |
+| `fragments` | where to draw it: one entry per page column the unit spans (a paragraph that crosses a column break of a two-column page has two entries for that page), with the page number, the rows it holds (`first_line..last_line`) and each row's `x` and `baseline` on that page. |
 | `pagination_stale` | the unit's height or row count changed, so the material after it is out of place until the next layout, which is already scheduled. |
 | `context_stale` | something before the unit changed since the last pass (or the unit borrowed a neighbour's context). The result is the best available; the next layout confirms it. |
 | `fragments[].approximate` | the rows had no position in the last layout (a new paragraph, an extra line), so the position was estimated. |

@@ -17,6 +17,11 @@
 - The live preview no longer draws another graphic of the document in place of an
   `\includegraphics` image that comes after cached pictures: `images_info` is keyed by the
   image rule index the IMAGE items carry, not the PDF object number (#41, by SunXin121).
+- Two-column documents: a paragraph that runs from one column into the next on the same page
+  gets live updates again. Its rows were placed as one run from its first line, so it either
+  waited for a full pass ("the placement would fall off its page") or was drawn with the
+  next column's rows under the previous column. Placements now have one fragment per page
+  column (#47).
 
 ### Faster
 
