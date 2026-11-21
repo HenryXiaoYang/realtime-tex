@@ -70,10 +70,7 @@ end
 -- \def\H{4} before a picture): their meaning at each unit is captured like the counters and
 -- replayed by the server, so a setting changed mid-document reaches the fast path at the right
 -- place. The names come from scanning the document's source files for definitions.
--- \@floatboxreset is what \@xfloat runs at the top of a float box; classes redefine it locally
--- in \table and \figure (IEEEtran: \footnotesize tables), so it is recorded for each float
--- (C.floatbox) and the server replays it.
-local tracked_macros = { "arraystretch", "baselinestretch", "@floatboxreset" }
+local tracked_macros = { "arraystretch", "baselinestretch" }
 local prev_macros = {}
 -- Glossary entries the source defines (\newglossaryentry, \newacronym, \newabbreviation):
 -- their first-use switch \ifglo@<label>@flag is set globally by the first \gls, so the long
@@ -354,16 +351,6 @@ function C.envbegin(name)
     unit_open("env", name, true)
   end
   C.env_depth = C.env_depth + 1
-end
--- env/<float>/end hook (still inside the float environment's group): the float box reset as
--- the float environment set it up, recorded in the float's unit
-function C.floatbox()
-  local cur = C.cur
-  if not (cur and cur.kind == "env") then return end
-  local m = meaning("@floatboxreset")
-  if m and prev_macros["@floatboxreset"] ~= m then
-    cur.macros["@floatboxreset"] = m; prev_macros["@floatboxreset"] = m
-  end
 end
 function C.envafter(name)
   if DEBUG_ENV then texio.write_nl("RTEXENV after " .. name .. " line " .. tex.inputlineno .. " depth " .. C.env_depth .. " nest " .. tex.nest.ptr .. " cur " .. tostring(C.cur and C.cur.uid)) end

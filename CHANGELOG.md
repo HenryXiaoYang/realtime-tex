@@ -26,6 +26,12 @@
   signal) while a document's preamble is still loading: the server's open of its reply
   channel blocked forever once `rtex` was gone. A server whose start fails or times out is
   now stopped too.
+- Floats compiled live run their own `\begin{figure}…\end{figure}`, so they get what the
+  class's float environment and packages set up around `\@float` and `\@xfloat`: Elsevier's
+  cas-sc captions (sans, 9 pt, `\@makecaption` set by the environment), setspace's single
+  spacing in floats under `\doublespacing`, float.sty's styles. The live engine used to start
+  the float box with the kernel's steps only, and such a caption came back in the body font and
+  spacing with status `ok` (#49).
 
 ### Faster
 
