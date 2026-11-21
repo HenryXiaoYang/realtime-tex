@@ -226,14 +226,26 @@ mod unix {
 
     pub(crate) struct Transport {
         fifo: PathBuf,
+        /// The FIFO's read end, non-blocking, opened before the server starts: a reader exists
+        /// whenever the server opens the FIFO (its first write never meets a missing reader),
+        /// and exists only while this process does.
+        resp: File,
     }
 
     impl Transport {
         pub fn create(work_dir: &Path) -> Result<Transport> {
+            use std::os::unix::fs::OpenOptionsExt;
             let fifo = work_dir.join(format!("resp-{}.fifo", std::process::id()));
             let _ = std::fs::remove_file(&fifo);
             nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).context("mkfifo")?;
-            Ok(Transport { fifo })
+            // Open once, non-blocking, so the open itself never blocks. Never close and reopen:
+            // a write into a FIFO without a reader would be lost (EPIPE on the server side).
+            let resp = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(&fifo)
+                .context("opening the response FIFO")?;
+            Ok(Transport { fifo, resp })
         }
 
         pub fn configure(&self, cmd: &mut Command) {
@@ -244,7 +256,7 @@ mod unix {
         /// the response FIFO and wrote its first frame.
         pub fn connect(self, child: &mut Child, timeout: Duration) -> Result<Connected> {
             let stdin = child.stdin.take().context("no stdin")?;
-            let resp = open_fifo_with_timeout(&self.fifo, child, timeout)?;
+            let resp = wait_first_frame(self.resp, child, timeout)?;
             #[cfg(target_os = "linux")]
             let frames = Frames::Direct(direct::Reader::new(resp));
             #[cfg(not(target_os = "linux"))]
@@ -257,17 +269,9 @@ mod unix {
         }
     }
 
-    fn open_fifo_with_timeout(fifo: &Path, child: &mut Child, timeout: Duration) -> Result<File> {
+    fn wait_first_frame(f: File, child: &mut Child, timeout: Duration) -> Result<File> {
         use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
         use std::os::fd::AsFd;
-        use std::os::unix::fs::OpenOptionsExt;
-        // Open the read end once, non-blocking, so the open itself never blocks and the
-        // server's own open(2) for writing succeeds as soon as it gets there. Never close and
-        // reopen: a write into a FIFO without a reader would be lost (EPIPE on the server side).
-        let f = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(fifo)?;
         let t0 = Instant::now();
         loop {
             if let Some(status) = child.try_wait()? {

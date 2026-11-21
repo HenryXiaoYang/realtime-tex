@@ -22,6 +22,10 @@
   waited for a full pass ("the placement would fall off its page") or was drawn with the
   next column's rows under the previous column. Placements now have one fragment per page
   column (#47).
+- `rtex` no longer leaves a LuaLaTeX server behind when it exits (quit, end of input, a
+  signal) while a document's preamble is still loading: the server's open of its reply
+  channel blocked forever once `rtex` was gone. A server whose start fails or times out is
+  now stopped too.
 
 ### Faster
 

@@ -139,6 +139,9 @@ impl FastServer {
         let conn = match transport.connect(&mut child, Duration::from_secs(120)) {
             Ok(c) => c,
             Err(e) => {
+                // a server still loading its preamble (timeout) would outlive us otherwise
+                let _ = child.kill();
+                let _ = child.wait();
                 // the TeX log says why (a missing file, an error in the preamble, a Lua error
                 // opening the channel); the exit status alone does not
                 let log = work_dir.join(format!("rtex-serve-g{generation}.log"));
