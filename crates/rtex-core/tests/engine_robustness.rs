@@ -365,3 +365,63 @@ fn math_alphabets_after_a_footnote_and_bold_math() {
         3,
     );
 }
+
+/// A host that dies while its server loads the preamble must not strand the server: the
+/// server's open of the response FIFO used to block forever once the host's read end was gone.
+/// The host is this test binary, re-run as a helper that starts a server, and SIGKILLed.
+#[cfg(target_os = "linux")]
+#[test]
+fn server_exits_when_the_host_dies_during_the_preamble() {
+    const PREAMBLE: &str = "\\documentclass{article}\n\\directlua{os.sleep(2)}\n";
+    if let Some(dir) = std::env::var_os("RTEX_TEST_DYING_HOST") {
+        let tl = TexLive::discover().unwrap();
+        let dir = std::path::PathBuf::from(dir);
+        let _ = FastServer::spawn(&tl, &dir, &dir.join("serve"), PREAMBLE, 1, None);
+        return;
+    }
+    let Some((_tl, root, project)) = setup_document("dying-host", PREAMBLE) else {
+        return;
+    };
+    // (state, parent pid) of a process, from /proc/<pid>/stat
+    let stat = |pid: i32| -> Option<(char, i32)> {
+        let s = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let mut f = s[s.rfind(')')? + 2..].split(' ');
+        Some((f.next()?.chars().next()?, f.next()?.parse().ok()?))
+    };
+    let mut host = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "server_exits_when_the_host_dies_during_the_preamble",
+        ])
+        .env("RTEX_TEST_DYING_HOST", &project)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let t0 = std::time::Instant::now();
+    let server = loop {
+        let child = std::fs::read_dir("/proc").unwrap().find_map(|e| {
+            let pid = e.ok()?.file_name().to_str()?.parse().ok()?;
+            let cmd = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+            let is_server = String::from_utf8_lossy(&cmd).contains("rtex-serve-g1");
+            (is_server && stat(pid)?.1 == host.id() as i32).then_some(pid)
+        });
+        if let Some(pid) = child {
+            break pid;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(30), "no server started");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    host.kill().unwrap();
+    host.wait().unwrap();
+    let t0 = std::time::Instant::now();
+    // gone, or a zombie nobody reaps (a container without an init)
+    while !matches!(stat(server), None | Some(('Z', _))) {
+        if t0.elapsed() > Duration::from_secs(30) {
+            unsafe { libc::kill(server, libc::SIGKILL) };
+            panic!("the server outlived its host by 30 s");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}

@@ -447,7 +447,17 @@ function S.init(boxnum, countnum, cctnum)
   end
   local path = os.getenv("RTEX_RESP")
   local err
-  resp, err = io.open(path, "wb")
+  if stdin == io.stdin then
+    -- a FIFO: a write-only open(2) blocks until there is a reader, forever when the host died
+    -- during the preamble. A read-write open never blocks and is a reader itself, so the
+    -- write-only open returns at once; with it closed again, a dead host shows as a failed
+    -- write (EPIPE) or end of file on stdin, and the server exits.
+    local rw = io.open(path, "r+b")
+    resp, err = io.open(path, "wb")
+    if rw then rw:close() end
+  else
+    resp, err = io.open(path, "wb")
+  end
   assert(resp, "cannot open response channel " .. tostring(path) .. ": " .. tostring(err))
   resp:setvbuf("full", 1 << 16)
   luatexbase.add_to_callback("show_error_hook", S.on_error, "rtex-serve")
