@@ -239,6 +239,37 @@ function S.begin_compile(req_id, ctx_id, source, pics)
   S.current.t_printed = gettime()
 end
 
+-- A float compiles into \rtex@floatbox (rtex-serve-context.lua): \@xfloat's \color@vbox
+-- holding the float's own \vbox between colour whatsits. That \vbox is opened in place and the
+-- list goes into the unit box; a box made otherwise (float.sty's styles frame it) goes in with
+-- its list as it is.
+local VLIST, WHATSIT = node.id("vlist"), node.id("whatsit")
+function S.float_contents()
+  local b = tex.getbox("rtex@floatbox")
+  if not b then return end
+  -- the list moves out; the empty box stays in the register until the next float replaces it
+  local head, inner = b.head, nil
+  b.head = nil
+  for n in node.traverse(head) do
+    if n.id == VLIST and not inner then inner = n
+    elseif n.id ~= WHATSIT then inner = false; break end
+  end
+  if inner then
+    local list, prev, next = inner.head, inner.prev, inner.next
+    inner.head, inner.prev, inner.next = nil, nil, nil
+    node.free(inner)
+    if list then
+      local tail = node.tail(list)
+      if prev then prev.next = list; list.prev = prev else head = list end
+      if next then tail.next = next; next.prev = tail end
+    else
+      if prev then prev.next = next else head = next end
+      if next then next.prev = prev end
+    end
+  end
+  if head then node.write(head) end
+end
+
 -- graphicx hook (driver): image resource index -> file
 S.images = {}
 -- The graphicx hook passes \lastsavedimageresourceindex, which is the image's PDF object
@@ -477,6 +508,7 @@ function S.init(boxnum, countnum, cctnum)
   -- images for the display-list traversal
   S.picctl = P.new(cctnum)
   dl.pic_images = S.cache_images
+  tex.print(cctnum, "\\newbox\\rtex@floatbox ")
   tex.print(cctnum, "\\def\\rtex@picns{rtex_serve}\\def\\rtex@picenvs{" .. table.concat(P.PICTURE_ENVS, ",") ..
             "}\\input{rtex-pic.tex}\\rtex@wrappicall ")
   -- LaTeX counters: idle values restored after every compile

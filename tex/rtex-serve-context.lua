@@ -71,7 +71,7 @@ local function everypar_allowed(ep)
   local e = ep:gsub("^\\leftprotrusion ", ""):gsub("\\leftprotrusion $", "")
   return EVERYPAR_PATTERNS[e] or false
 end
-local FLOAT_ENVS = { figure = "columnwidth", table = "columnwidth", ["figure*"] = "textwidth", ["table*"] = "textwidth" }
+local FLOAT_ENVS = { figure = true, table = true, ["figure*"] = true, ["table*"] = true }
 -- LaTeX counters (c@<name>) known at start-up; replayed per unit and restored after each compile
 S.counter_names = {}
 S.counter_base = {}
@@ -189,12 +189,13 @@ local function install_context(id, ctx)
   if ep ~= "" then extra[#extra + 1] = "\\everypar{" .. ep .. "}" end
   ctx.float = kind == "env" and name and FLOAT_ENVS[name] or nil
   if ctx.float then
-    -- what \@xfloat does to the float box content; \@floatboxreset is the kernel's
-    -- \reset@font\normalsize\@setminipage, or the class's version replayed with the macros above
-    extra[#extra + 1] = "\\def\\@captype{" .. name:gsub("%*$", "") .. "}\\hsize\\" .. ctx.float .. "\\@parboxrestore\\@floatboxreset "
+    -- the float environment runs as in the document (the class's begin code, \@xfloat as
+    -- packages patched it), into \rtex@floatbox instead of a float queue box: in the unit box
+    -- \@xfloat takes its \ifinner branch, which only reports the error silenced here
+    extra[#extra + 1] = "\\let\\@parmoderr\\relax\\def\\@currbox{\\rtex@floatbox}"
   end
   ctx.head_extra = table.concat(extra)
-  ctx.tail_extra = ctx.float and "\\par\\vskip\\z@skip" or ""
+  ctx.tail_extra = ctx.float and "\\par\\directlua{rtex_serve.float_contents()}" or ""
   local b = ctx.begin
   local n = b and b.nfss
   if n and n.family then
