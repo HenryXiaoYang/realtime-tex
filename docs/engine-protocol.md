@@ -116,8 +116,7 @@ One per unit, built by the host from the latest capture (`EngineUnit::context_js
 - `everypar` must be one of the kernel's own patterns: empty, `\leftprotrusion`, or what
   `\@afterheading`, `\@doendpe` or `\@setminipage` leave. The host refuses anything else.
 - `macros` holds the meanings of macros the document body redefines, as `\meaning` prints them,
-  and the server replays them as local definitions. For a float it also holds `\@floatboxreset`
-  as the float environment set it up (IEEEtran's tables are `\footnotesize`). A `\newif` switch
+  and the server replays them as local definitions. A `\newif` switch
   (`\iftrue`/`\iffalse`, for example glossaries' first-use flags) is set locally for the compile
   and reset globally to its idle value afterwards.
 - `thefmt` holds `\the<counter>` bodies, replayed when they differ from the server's.
@@ -130,9 +129,11 @@ One per unit, built by the host from the latest capture (`EngineUnit::context_js
    used.
 2. `\begingroup\global\setbox\rtexbox\vbox\bgroup`.
 3. Set the parameters (only those that differ from the server's idle values), `\parshape`, the
-   counters, the kernel switches, `\everypar` and the replayed macros. A float gets the state a
-   real float box has (`\@captype`, `\hsize\columnwidth`, `\@parboxrestore`, `\@floatboxreset`),
-   and its `\begin{figure}…\end{figure}` lines are stripped.
+   counters, the kernel switches, `\everypar` and the replayed macros. A float runs its own
+   `\begin{figure}…\end{figure}`, so the class's float environment and what packages add to
+   `\@xfloat` set up its box as in the document; the box goes to a scratch register instead of
+   the float queue (in the unit box `\@xfloat` takes its inner-mode branch, whose error is
+   silenced), and its content is then put into the unit box.
 4. Feed the source lines with `tex.print`, then `\par\egroup\endgroup`.
 5. Restore every counter to its idle value. Check for leaks: compare the meaning of every
    control sequence the source mentions, and the engine state fingerprint. Walk the box to make
