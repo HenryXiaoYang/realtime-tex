@@ -131,7 +131,7 @@ jobs:
     runs-on: windows-latest
     env:
       # one known-good mirror instead of a random one per download (timeouts broke this job)
-      MIKTEX_REPOSITORY: https://mirror.clarkson.edu/ctan/systems/win32/miktex/tm/packages/
+      MIKTEX_REPOSITORY: https://ctan.math.illinois.edu/systems/win32/miktex/tm/packages/
     defaults:
       run:
         shell: bash
