@@ -959,13 +959,12 @@ fn count_registers_named_like_counters_are_replayed() {
     let marks = root.join("marks");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::create_dir_all(&marks).unwrap();
-    // \bump numbers itself like ltmermaid's diagrams and leaves a file named after the number
+    // \bump numbers itself like ltmermaid's diagrams and leaves a file named after the number in
+    // `marks` next to the project. The engines get the project as RTEX_PROJECT_DIR (with forward
+    // slashes): a Windows temp path written into the source would be read as TeX (`\Users`, `~`).
     std::fs::write(
         project.join("main.tex"),
-        format!(
-            "\\documentclass{{article}}\n\\makeatletter\n\\newcount\\c@demo@n\n\\newcommand\\bump{{\\global\\advance\\c@demo@n\\@ne\\directlua{{io.open(\"{}/bump-\" .. tex.count[\"c@demo@n\"] .. \".txt\", \"w\"):close()}}[\\the\\c@demo@n]}}\n\\makeatother\n\\begin{{document}}\nA first paragraph \\bump{{}} of plain text.\n\nA second paragraph \\bump{{}} of plain text.\n\\end{{document}}\n",
-            marks.display()
-        ),
+        "\\documentclass{article}\n\\makeatletter\n\\newcount\\c@demo@n\n\\newcommand\\bump{\\global\\advance\\c@demo@n\\@ne\\directlua{io.open(os.getenv(\"RTEX_PROJECT_DIR\") .. \"/../marks/bump-\" .. tex.count[\"c@demo@n\"] .. \".txt\", \"w\"):close()}[\\the\\c@demo@n]}\n\\makeatother\n\\begin{document}\nA first paragraph \\bump{} of plain text.\n\nA second paragraph \\bump{} of plain text.\n\\end{document}\n",
     )
     .unwrap();
     let mut cfg = SessionConfig::new(&project, "main.tex");
