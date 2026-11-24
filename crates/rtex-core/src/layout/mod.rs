@@ -12,6 +12,7 @@ pub use compare::compare_unit_rows;
 
 use crate::capture::{CapturedParagraph, CapturedUnit};
 use crate::document::{ParaId, Revision};
+use crate::eligibility::UnitShape;
 use rtex_dl::{DisplayList, Sp};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
@@ -41,6 +42,8 @@ pub struct SnapshotSpan {
     pub last_line: i64,
     pub last_revision: Revision,
     pub background_only: bool,
+    /// Source shape used to distinguish units whose spans share a physical line.
+    pub shape: Option<UnitShape>,
     /// What the fast path compiles for the span as the pass typeset it (`document::fast_source`
     /// of the snapshot: trailing newline removed, `\input` end-of-file space reproduced); the
     /// probe compile replays exactly this.
@@ -144,10 +147,13 @@ pub fn snapshot_spans_of(
         .map(|sp| {
             let (a, b) = fb.line_range(sp);
             let text = &fb.text[sp.range.clone()];
-            let background_only = matches!(sp.kind, SpanKind::Preamble | SpanKind::Trailer)
-                || !crate::eligibility::classify_source(text, policy)
-                    .1
-                    .is_empty();
+            let (shape, background_only) =
+                if matches!(sp.kind, SpanKind::Preamble | SpanKind::Trailer) {
+                    (None, true)
+                } else {
+                    let (shape, reasons) = crate::eligibility::classify_source(text, policy);
+                    (Some(shape), !reasons.is_empty())
+                };
             SnapshotSpan {
                 id: sp.id,
                 file: file.to_string(),
@@ -155,6 +161,7 @@ pub fn snapshot_spans_of(
                 last_line: b,
                 last_revision: sp.last_revision,
                 background_only,
+                shape,
                 text: crate::document::fast_source(fb, sp, file_is_inputted),
             }
         })

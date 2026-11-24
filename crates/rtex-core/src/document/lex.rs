@@ -1,21 +1,5 @@
 //! Source-text helpers for segmentation: comments, verbatim, commands, environments.
 
-pub(super) fn brace_balance(line: &str) -> i32 {
-    let b = line.as_bytes();
-    let mut bal = 0;
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'\\' => i += 1,
-            b'{' => bal += 1,
-            b'}' => bal -= 1,
-            _ => {}
-        }
-        i += 1;
-    }
-    bal
-}
-
 /// Strip an unescaped `%` comment from a source line.
 pub fn strip_comment(line: &str) -> &str {
     let b = line.as_bytes();
@@ -130,19 +114,4 @@ pub(crate) fn find_command(text: &str, marker: &str) -> Option<usize> {
         }
     }
     None
-}
-
-pub(super) fn find_all_envs(line: &str, prefix: &str) -> Vec<String> {
-    let mut v = Vec::new();
-    let mut idx = 0;
-    while let Some(p) = line[idx..].find(prefix) {
-        let s = idx + p + prefix.len();
-        if let Some(e) = line[s..].find('}') {
-            v.push(line[s..s + e].to_string());
-            idx = s + e;
-        } else {
-            break;
-        }
-    }
-    v
 }

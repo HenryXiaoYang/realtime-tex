@@ -5,6 +5,106 @@ use super::{FileBuf, SegmentRules, Span, SpanKind, BLOCK_ENVS, HEADING_CMDS};
 use crate::piccache::PICTURE_ENVS;
 use std::ops::Range;
 
+fn heading_name(source: &str) -> Option<&str> {
+    let command = source.strip_prefix('\\')?;
+    let name = command.split(|c: char| !c.is_ascii_alphabetic()).next()?;
+    HEADING_CMDS
+        .contains(&&source[..name.len() + 1])
+        .then_some(name)
+}
+
+enum EnvCommand<'a> {
+    Begin(usize, &'a str),
+    End(&'a str),
+}
+
+/// Scan a logical line until the next outer heading or the physical line ending.
+fn scan_line<'a>(
+    line: &'a str,
+    env_stack: &[(&str, bool)],
+    mut depth: usize,
+) -> (usize, usize, Vec<EnvCommand<'a>>) {
+    let mut commands = Vec::new();
+    if !line.bytes().any(|b| matches!(b, b'\\' | b'{' | b'}')) {
+        return (line.len(), depth, commands);
+    }
+    let trimmed_start = line.len() - line.trim_start().len();
+    let mut envs: Vec<&str> = env_stack.iter().map(|&(name, _)| name).collect();
+    let mut cursor = 0;
+    while cursor < line.len() {
+        let rest = &line[cursor..];
+        if let Some(env) = envs.last().filter(|env| is_verbatim_env(env)) {
+            let end = format!("\\end{{{env}}}");
+            let Some(pos) = rest.find(&end) else { break };
+            let name_start = cursor + pos + "\\end{".len();
+            commands.push(EnvCommand::End(&line[name_start..name_start + env.len()]));
+            cursor += pos + end.len();
+            envs.pop();
+            continue;
+        }
+        let ch = rest.chars().next().unwrap();
+        match ch {
+            '%' => break,
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            '\\' => {
+                let word_len = rest[1..]
+                    .bytes()
+                    .take_while(u8::is_ascii_alphabetic)
+                    .count();
+                if word_len == 0 {
+                    // Consume a control symbol, including an escaped backslash, brace or percent.
+                    cursor += rest[1..].chars().next().map_or(1, |c| 1 + c.len_utf8());
+                    continue;
+                }
+                let word_end = 1 + word_len;
+                if cursor > trimmed_start
+                    && depth == 0
+                    && envs.is_empty()
+                    && HEADING_CMDS.contains(&&rest[..word_end])
+                {
+                    return (cursor, depth, commands);
+                }
+                let word = &rest[1..word_end];
+                let tail = &rest[word_end..];
+                if matches!(word, "begin" | "end") {
+                    if let Some((name, after)) =
+                        tail.strip_prefix('{').and_then(|arg| arg.split_once('}'))
+                    {
+                        if word == "begin" {
+                            commands.push(EnvCommand::Begin(cursor, name));
+                            envs.push(name);
+                        } else {
+                            commands.push(EnvCommand::End(name));
+                            if let Some(i) = envs.iter().rposition(|e| *e == name) {
+                                envs.truncate(i);
+                            }
+                        }
+                        cursor = line.len() - after.len();
+                        continue;
+                    }
+                }
+                if word == "verb" {
+                    let arg = tail.strip_prefix('*').unwrap_or(tail);
+                    if let Some(delimiter) = arg.chars().next() {
+                        let inner = &arg[delimiter.len_utf8()..];
+                        if let Some(end) = inner.find(delimiter) {
+                            cursor = line.len() - inner.len() + end + delimiter.len_utf8();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                cursor += word_end;
+                continue;
+            }
+            _ => {}
+        }
+        cursor += ch.len_utf8();
+    }
+    (line.len(), depth, commands)
+}
+
 pub(super) fn compute_line_starts(text: &str) -> Vec<usize> {
     let mut v = vec![0];
     for (i, b) in text.bytes().enumerate() {
@@ -42,9 +142,8 @@ pub(super) fn segment(text: &str, rules: &SegmentRules) -> Vec<(Range<usize>, Sp
 }
 
 /// Segment `text[body_start..body_end]` (body material only) appending absolute ranges to `out`.
-/// Returns false when the slice ends inside an unclosed environment or with a run-in heading
-/// still waiting for its title's paragraph (the caller must then re-segment the whole file,
-/// since the environment swallows everything that follows, and the heading what comes next).
+/// Returns false when the slice ends inside an open environment or group, or with a run-in
+/// heading still waiting for its title's paragraph. The caller must then re-segment the whole file.
 ///
 /// Long on purpose: it is one pass over the lines with its state in locals (the open span, the
 /// environment stack, a pending split, a heading whose braces or run-in title are still open),
@@ -58,154 +157,128 @@ pub(super) fn segment_body(
 ) -> bool {
     let is_block =
         |name: &str| BLOCK_ENVS.contains(&name) || rules.block_envs.iter().any(|e| e == name);
-    let is_run_in = |line: &str| {
-        let name = line[1..]
-            .split(|c: char| !c.is_ascii_alphabetic())
-            .next()
-            .unwrap_or("");
-        rules.run_in.iter().any(|h| h == name)
-    };
     let body = &text[body_start..body_end];
-    let lines: Vec<(usize, &str)> = {
-        let mut v = Vec::new();
-        let mut p = 0;
-        for l in body.split_inclusive('\n') {
-            v.push((p, l));
-            p += l.len();
-        }
-        v
-    };
     let flush = |out: &mut Vec<(Range<usize>, SpanKind)>, s: usize, e: usize, k: SpanKind| {
         if e > s && !body[s..e].trim().is_empty() {
             out.push((body_start + s..body_start + e, k));
         }
     };
     let mut cur_start: Option<usize> = None;
-    let mut env_stack: Vec<String> = Vec::new();
-    let mut env_inline: Vec<bool> = Vec::new(); // parallel to env_stack: an inline picture
+    let mut env_stack = Vec::new(); // (environment name, inline picture)
     let mut cur_kind = SpanKind::Body;
     // the current span ends before the next non-blank line: after a heading's braces closed or
     // after a block environment closed (the capture closes the unit at those points)
     let mut split_pending = false;
-    let mut heading_balance: i32 = 0;
+    let mut group_depth = 0;
     // the heading's title braces are not closed yet
     let mut heading_open = false;
-    // a run-in heading's span: `title_pending` until the paragraph or environment that sets
-    // its title begins, then `run_in_body` (a heading line ends that body like a paragraph)
+    // A run-in heading's span continues until the paragraph or environment that sets its title.
     let mut run_in = false;
     let mut title_pending = false;
-    let mut run_in_body = false;
-    for (lstart, line) in &lines {
+    let mut lstart = 0;
+    let mut lines = body.split_inclusive('\n');
+    let mut remaining = "";
+    loop {
+        if remaining.is_empty() {
+            let Some(line) = lines.next() else { break };
+            remaining = line;
+        }
+        let outer = group_depth == 0 && env_stack.is_empty();
+        let (cut, depth, commands) = scan_line(remaining, &env_stack, group_depth);
+        group_depth = depth;
+        let (line, rest) = remaining.split_at(cut);
+        remaining = rest;
+        let start = lstart;
+        lstart += cut;
         let trimmed = line.trim();
         let stripped = strip_comment(trimmed);
-        let is_blank = stripped.trim().is_empty() && !trimmed.starts_with('%');
-        // environment tracking (only at line starts, which covers the common layout)
-        let begins: Vec<String> = if stripped.contains("\\begin{") {
-            find_all_envs(stripped, "\\begin{")
-        } else {
-            Vec::new()
+        let begins = || {
+            commands.iter().filter_map(|command| match *command {
+                EnvCommand::Begin(pos, name) => Some((pos, name)),
+                EnvCommand::End(_) => None,
+            })
         };
-        let ends: Vec<String> = if stripped.contains("\\end{") {
-            find_all_envs(stripped, "\\end{")
-        } else {
-            Vec::new()
-        };
-        let heading = HEADING_CMDS.iter().any(|h| stripped.starts_with(h));
+        let has_begin = begins().next().is_some();
+        let heading = heading_name(stripped);
         // a picture environment opened while a paragraph is open (text before it in this span
         // or on its line) is an inline box of that paragraph, as the capture sees it (no unit
         // of its own); the same rule as eligibility/shape.rs (content_start before the \begin)
-        let inline_picture = begins.iter().any(|b| PICTURE_ENVS.contains(&b.as_str())) && {
-            let k = PICTURE_ENVS
-                .iter()
-                .filter_map(|e| stripped.find(&format!("\\begin{{{e}}}")))
-                .min()
-                .unwrap_or(0);
-            let paragraph_open = env_stack.is_empty()
-                && !split_pending
-                && cur_kind == SpanKind::Body
-                && cur_start.is_some();
-            let mut before = String::new();
-            if paragraph_open {
-                before.push_str(&body[cur_start.unwrap()..*lstart]);
-            }
-            before.push_str(&stripped[..k]);
-            crate::eligibility::has_content(&before)
-        };
-        if env_stack.is_empty() {
-            if is_blank && trimmed.is_empty() {
-                if title_pending {
-                    // the run-in title goes into the paragraph after the blank line
+        let inline_picture = begins()
+            .find(|&(_, name)| PICTURE_ENVS.contains(&name))
+            .is_some_and(|(pos, _)| {
+                let paragraph_open = env_stack.is_empty()
+                    && !split_pending
+                    && cur_kind == SpanKind::Body
+                    && cur_start.is_some();
+                let before = if paragraph_open {
+                    cur_start.unwrap()
+                } else {
+                    start
+                };
+                crate::eligibility::has_content(&body[before..start + pos])
+            });
+        if outer || heading_open {
+            if trimmed.is_empty() {
+                if title_pending || heading_open {
+                    // An open heading or a pending run-in title continues after the blank.
                     continue;
                 }
                 if let Some(s) = cur_start.take() {
-                    flush(out, s, *lstart, cur_kind);
+                    flush(out, s, start, cur_kind);
                 }
                 split_pending = false;
                 continue;
             }
-            let starts_new = cur_start.is_none()
-                || (heading && (cur_kind == SpanKind::Body || run_in_body || title_pending))
-                || split_pending;
+            let starts_new =
+                cur_start.is_none() || (heading.is_some() && !heading_open) || split_pending;
             if starts_new {
                 // a heading command starts a new unit even without a blank line, and a unit ends
                 // after a heading or a block environment
                 if let Some(s) = cur_start {
-                    flush(out, s, *lstart, cur_kind);
+                    flush(out, s, start, cur_kind);
                 }
-                cur_start = Some(*lstart);
-                cur_kind = if heading {
+                cur_start = Some(start);
+                cur_kind = if heading.is_some() {
                     SpanKind::Heading
                 } else {
                     SpanKind::Body
                 };
-                heading_balance = 0;
-                heading_open = heading;
-                run_in = heading && is_run_in(stripped);
+                heading_open = heading.is_some();
+                run_in = heading.is_some_and(|name| rules.run_in.iter().any(|h| h == name));
                 title_pending = false;
-                run_in_body = false;
                 split_pending = false;
             } else if title_pending && !crate::eligibility::labels_only(stripped) {
                 title_pending = false;
-                run_in_body = true;
             }
             if !run_in
-                && begins
-                    .iter()
-                    .any(|b| !(inline_picture && PICTURE_ENVS.contains(&b.as_str())))
+                && begins().any(|(_, name)| !(inline_picture && PICTURE_ENVS.contains(&name)))
             {
                 cur_kind = SpanKind::Env;
                 heading_open = false;
             }
-            if heading_open {
-                heading_balance += brace_balance(stripped);
-                if heading_balance <= 0 || !begins.is_empty() {
-                    heading_open = false;
-                    if !run_in {
-                        split_pending = begins.is_empty();
-                    } else if begins.is_empty()
-                        && !crate::eligibility::runs_into_title(
-                            &body[cur_start.unwrap()..*lstart + line.len()],
-                        )
-                    {
-                        title_pending = true;
-                    } else {
-                        run_in_body = true;
-                    }
+            if heading_open && (group_depth == 0 || has_begin) {
+                heading_open = false;
+                if !run_in {
+                    split_pending = !has_begin;
+                } else {
+                    title_pending = !has_begin
+                        && !crate::eligibility::runs_into_title(&body[cur_start.unwrap()..lstart]);
                 }
             }
         }
-        for b in begins {
-            let inline = inline_picture && PICTURE_ENVS.contains(&b.as_str());
-            env_stack.push(b);
-            env_inline.push(inline);
-        }
-        for e in ends {
-            if let Some(idx) = env_stack.iter().rposition(|x| *x == e) {
-                let inline = env_inline[idx];
-                env_stack.truncate(idx);
-                env_inline.truncate(idx);
-                if env_stack.is_empty() && is_block(&e) && !inline {
-                    split_pending = true;
+        for command in commands {
+            match command {
+                EnvCommand::Begin(_, name) => {
+                    env_stack.push((name, inline_picture && PICTURE_ENVS.contains(&name)));
+                }
+                EnvCommand::End(name) => {
+                    if let Some(idx) = env_stack.iter().rposition(|&(env, _)| env == name) {
+                        let (_, inline) = env_stack[idx];
+                        env_stack.truncate(idx);
+                        if env_stack.is_empty() && is_block(name) && !inline {
+                            split_pending = true;
+                        }
+                    }
                 }
             }
         }
@@ -213,7 +286,7 @@ pub(super) fn segment_body(
     if let Some(s) = cur_start {
         flush(out, s, body.len(), cur_kind);
     }
-    env_stack.is_empty() && !title_pending
+    env_stack.is_empty() && group_depth == 0 && !title_pending
 }
 
 /// The source the fast path typesets for a span: its text without the trailing newline, plus
