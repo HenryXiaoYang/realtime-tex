@@ -943,6 +943,91 @@ fn counter_changes_schedule_a_pass() {
     s.close();
 }
 
+/// A counter made with `\newcount\c@name` (not `\newcounter`, so not in `\cl@@ckpt`) that a unit
+/// advances globally: live compiles start from the unit's value in the layout and leave the
+/// server's idle value alone, as for LaTeX counters. Packages that number generated files this
+/// way (ltmermaid: `mermaid/<job>-mermaid-<n>.pdf`) must see the same number on every edit.
+#[test]
+fn count_registers_named_like_counters_are_replayed() {
+    if rtex_core::texlive::TexLive::discover().is_err() {
+        eprintln!("SKIP: no lualatex");
+        return;
+    }
+    let root = std::env::temp_dir().join(format!("rtex-session-{}-countreg", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    let marks = root.join("marks");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::create_dir_all(&marks).unwrap();
+    // \bump numbers itself like ltmermaid's diagrams and leaves a file named after the number
+    std::fs::write(
+        project.join("main.tex"),
+        format!(
+            "\\documentclass{{article}}\n\\makeatletter\n\\newcount\\c@demo@n\n\\newcommand\\bump{{\\global\\advance\\c@demo@n\\@ne\\directlua{{io.open(\"{}/bump-\" .. tex.count[\"c@demo@n\"] .. \".txt\", \"w\"):close()}}[\\the\\c@demo@n]}}\n\\makeatother\n\\begin{{document}}\nA first paragraph \\bump{{}} of plain text.\n\nA second paragraph \\bump{{}} of plain text.\n\\end{{document}}\n",
+            marks.display()
+        ),
+    )
+    .unwrap();
+    let mut cfg = SessionConfig::new(&project, "main.tex");
+    cfg.build_dir = root.join("build");
+    cfg.debounce = Duration::from_millis(50);
+    let s = Session::open(cfg).unwrap();
+    let Event::LayoutUpdate {
+        eligible_paragraphs,
+        ..
+    } = wait_layout(&s)
+    else {
+        unreachable!()
+    };
+    let doc = s.document_text("main.tex").unwrap();
+    let spans = s.spans("main.tex");
+    let second = spans
+        .iter()
+        .find(|sp| doc[sp.range.clone()].starts_with("A second"))
+        .unwrap()
+        .clone();
+    assert!(
+        eligible_paragraphs.contains(&second.id),
+        "second paragraph live"
+    );
+    let marked = || {
+        let mut v: Vec<String> = std::fs::read_dir(&marks)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(marked(), ["bump-1.txt", "bump-2.txt"], "full compile");
+    for f in marked() {
+        std::fs::remove_file(marks.join(f)).unwrap();
+    }
+    for i in 0..3 {
+        let doc = s.document_text("main.tex").unwrap();
+        let pos = doc.find("A second paragraph").unwrap() + "A second paragraph".len();
+        let r = s
+            .apply_edit(
+                "main.tex",
+                Edit {
+                    start_byte: pos,
+                    end_byte: pos,
+                    text: " more".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(r.routed, "fast", "edit {i}: {:?}", r.reasons);
+        let (ev, others) = wait(&s, 60, |e| matches!(e, Event::ParagraphUpdate { .. }));
+        let Some(Event::ParagraphUpdate { par_id, status, .. }) = ev else {
+            panic!("edit {i}: no update; {others:?}")
+        };
+        assert_eq!(par_id, second.id);
+        assert_eq!(status, "ok");
+    }
+    // every live compile numbered the second paragraph's \bump 2, as the full compile did
+    assert_eq!(marked(), ["bump-2.txt"], "live compiles");
+    s.close();
+}
+
 /// Environments defined in the preamble: an inline one wraps a paragraph that stays live, a
 /// block one (wrapping quote) is a unit of its own.
 #[test]
