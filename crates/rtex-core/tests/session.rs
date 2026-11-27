@@ -1514,6 +1514,135 @@ fn a_fresh_paragraph_after_a_heading_is_placed_below_it() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+fn edits_around_block_heading_boundary(
+    name: &str,
+    block: &str,
+    separator: &str,
+    block_kind: &str,
+    edits: &[(&str, &str)],
+) {
+    if let Err(e) = rtex_core::texlive::TexLive::discover() {
+        eprintln!("SKIP: {e}");
+        return;
+    }
+    let root =
+        std::env::temp_dir().join(format!("rtex-block-heading-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("main.tex"),
+        format!(
+            "\\documentclass{{article}}\n\\usepackage{{amsmath}}\n\\begin{{document}}\n\\section{{A}}\n{block}{separator}\\section{{Heading}}\nNext text\n\\end{{document}}\n"
+        ),
+    )
+    .unwrap();
+    let mut cfg = SessionConfig::new(&project, "main.tex");
+    cfg.build_dir = root.join("build");
+    cfg.fast_budget = Duration::from_secs(5);
+    let s = Session::open(cfg).unwrap();
+    let Event::LayoutUpdate { placements, .. } = wait_layout(&s) else {
+        unreachable!()
+    };
+    s.pause_background(true);
+    let check = |needle: &str, inserted: &str, kind: &str| {
+        let doc = s.document_text("main.tex").unwrap();
+        let start = doc.find(needle).unwrap();
+        let span = s
+            .spans("main.tex")
+            .into_iter()
+            .find(|sp| sp.range.contains(&start))
+            .unwrap();
+        let pos = start + needle.len();
+        let edit = s
+            .apply_edit(
+                "main.tex",
+                Edit {
+                    start_byte: pos,
+                    end_byte: pos,
+                    text: inserted.into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(edit.routed, "fast", "{name}, {needle}: {:?}", edit.reasons);
+        assert_eq!(edit.outcome.touched, [span.id], "{name}, {needle}");
+        let placement = placements
+            .iter()
+            .find(|p| p.par_id == span.id)
+            .unwrap_or_else(|| panic!("{name}, {needle}: span has no captured placement"));
+        assert_eq!(placement.kind, kind, "{name}, {needle}");
+        let (update, _) = s.wait_for(
+            Duration::from_secs(60),
+            |e| matches!(e, Event::ParagraphUpdate { edit_id, .. } if *edit_id == edit.edit_id),
+        );
+        let Some(Event::ParagraphUpdate {
+            par_id,
+            status,
+            context_stale,
+            fragments,
+            dl,
+            diagnostics,
+            ..
+        }) = update
+        else {
+            panic!("{name}, {needle}: no paragraph update");
+        };
+        assert_eq!(par_id, span.id, "{name}, {needle}");
+        assert_eq!(status, "ok", "{name}, {needle}: {diagnostics:?}");
+        assert!(!context_stale, "{name}, {needle}: stale/borrowed context");
+        assert_eq!(dl.lines.len() as i64, placement.lines, "{name}, {needle}");
+        assert_eq!(
+            fragments.len(),
+            placement.fragments.len(),
+            "{name}, {needle}"
+        );
+        assert!(fragments.iter().all(|f| !f.approximate), "{name}, {needle}");
+    };
+    for &(needle, inserted) in edits {
+        check(needle, inserted, block_kind);
+    }
+    check("Heading", " edit", "heading:section");
+    check("Next", " edited", "par");
+    s.close();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+const EQUATION_WITH_TEXT: &str = "English text\n\\begin{equation}\n    E = mc^2\n\\end{equation}";
+const EQUATION_EDITS: &[(&str, &str)] = &[("English", " edited"), ("E = mc^2", "+1")];
+
+#[test]
+fn an_equation_before_a_heading_on_the_next_line_takes_the_fast_path() {
+    edits_around_block_heading_boundary(
+        "equation-next-line",
+        EQUATION_WITH_TEXT,
+        "\n",
+        "par",
+        EQUATION_EDITS,
+    );
+}
+
+#[test]
+fn an_equation_before_a_heading_on_the_same_line_takes_the_fast_path() {
+    edits_around_block_heading_boundary(
+        "equation-same-line",
+        EQUATION_WITH_TEXT,
+        "",
+        "par",
+        EQUATION_EDITS,
+    );
+}
+
+#[test]
+fn an_itemize_before_a_heading_on_the_same_line_takes_the_fast_path() {
+    edits_around_block_heading_boundary(
+        "itemize-same-line",
+        "\\begin{itemize}\n\\item Item text\n\\end{itemize}",
+        "",
+        "env:itemize",
+        &[("Item", " edited")],
+    );
+}
+
 /// Two paragraphs typed fresh before the pass, the second one typesetting no rows (only a
 /// `\label`): it is placed against the first one's live placement, and its empty result must
 /// not take the engine thread down (what a host saw as live updates stopping for good).

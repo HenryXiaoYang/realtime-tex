@@ -12,6 +12,9 @@
   number) are replayed and restored by the live engine like LaTeX counters: each live compile
   advanced them, so ltmermaid rendered every diagram again on each keystroke under a new name
   (#57, by Steve-Li-1998).
+- A paragraph ending in a block environment with a heading right on the next line
+  (`\end{equation}` then `\section{B}`, no blank line) goes live again: the paragraph and the
+  heading were mapped to the same span, so edits to it went to a full compile (#53, by dfshfghj).
 
 ### Documentation
 
