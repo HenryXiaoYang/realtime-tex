@@ -1,15 +1,55 @@
 //! Installing a finished pass as the current layout: units and their contexts, the mapping from units to source spans, and the page lists (a page whose bytes are unchanged keeps its decoded list).
 
 use super::{EngineUnit, LayoutStore, SnapshotSpan};
-use crate::capture::{CaptureResult, CapturedParagraph};
+use crate::capture::{CaptureResult, CapturedParagraph, CapturedUnit};
 use crate::document::{ParaId, Revision};
+use crate::eligibility::UnitShape;
 use rtex_dl::DisplayList;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+/// The capture reports physical input lines. When source spans share a line, use the
+/// captured unit's kind and name to require a unique match.
+fn source_span(u: &CapturedUnit, file: &str, snapshot: &[SnapshotSpan]) -> Option<ParaId> {
+    let mut containing = snapshot
+        .iter()
+        .filter(|s| s.file == file && (s.first_line..=s.last_line).contains(&u.begin_line))
+        .peekable();
+    if let Some(first) = containing.next() {
+        if containing.peek().is_none() {
+            return Some(first.id);
+        }
+        let mut matching = std::iter::once(first).chain(containing).filter(|s| {
+            match (&s.shape, u.kind.as_str()) {
+                (Some(UnitShape::Par), "par") => true,
+                (Some(UnitShape::Env(name)), "env")
+                | (Some(UnitShape::Heading(name)), "heading") => u.name.as_ref() == Some(name),
+                _ => false,
+            }
+        });
+        let span = matching.next()?;
+        return matching.next().is_none().then_some(span.id);
+    }
+    // A unit can begin in the gap between two spans. A paragraph belongs to the next span
+    // when it reaches it (seen after \newpage in standby passes). Otherwise a macro on the
+    // previous span's last line may have read ahead (hyperref's \maketitle wrapper).
+    if u.kind == "par" {
+        if let Some(next) = snapshot.iter().find(|s| {
+            s.file == file
+                && s.first_line > u.begin_line
+                && u.end_line.unwrap_or(u.begin_line) >= s.first_line
+        }) {
+            return Some(next.id);
+        }
+    }
+    snapshot
+        .iter()
+        .find(|s| s.file == file && s.last_line + 1 == u.begin_line)
+        .map(|s| s.id)
+}
+
 impl LayoutStore {
-    /// Install a finished capture pass. Maps units to spans by their first source line inside
-    /// the snapshot's span line ranges (exactly one unit per span for a fast-eligible mapping).
+    /// Install a finished capture pass and index its unambiguous source span mappings.
     pub fn install(
         &mut self,
         cap: &CaptureResult,
@@ -39,8 +79,7 @@ impl LayoutStore {
         Ok(changed)
     }
 
-    /// One engine unit per captured unit, each mapped to the snapshot span that holds its first
-    /// source line. Returns how many units each span got.
+    /// One engine unit per captured unit. Returns how many units each span got.
     fn units_from_capture(
         &mut self,
         cap: &CaptureResult,
@@ -53,38 +92,7 @@ impl LayoutStore {
             let file = u.file.clone().unwrap_or_else(|| "./main.tex".into());
             let file = crate::paths::key(&file);
             let file = file.trim_start_matches("./").to_string();
-            let mut span = None;
-            for s in snapshot {
-                if s.file == file && u.begin_line >= s.first_line && u.begin_line <= s.last_line {
-                    span = Some(s.id);
-                    break;
-                }
-            }
-            if span.is_none() {
-                // a unit that begins on a blank line between two spans: it belongs to the next
-                // span when it extends into it (the engine reported the paragraph a line early,
-                // seen after \newpage in standby passes), otherwise to the previous one (a macro
-                // at the end of its last line read ahead before producing the unit: hyperref's
-                // \maketitle wrapper)
-                let next = if u.kind == "par" {
-                    snapshot
-                        .iter()
-                        .find(|s| {
-                            s.file == file
-                                && s.first_line > u.begin_line
-                                && u.end_line.unwrap_or(u.begin_line) >= s.first_line
-                        })
-                        .map(|s| s.id)
-                } else {
-                    None
-                };
-                span = next.or_else(|| {
-                    snapshot
-                        .iter()
-                        .find(|s| s.file == file && s.last_line + 1 == u.begin_line)
-                        .map(|s| s.id)
-                });
-            }
+            let span = source_span(u, &file, snapshot);
             if let Some(id) = span {
                 *per_span_count.entry(id).or_default() += 1;
             }
@@ -256,6 +264,48 @@ impl LayoutStore {
 #[cfg(test)]
 mod install_tests {
     use super::*;
+
+    #[test]
+    fn same_line_spans_require_a_unique_shape_match() {
+        let span = |id, shape| SnapshotSpan {
+            id: ParaId(id),
+            file: "main.tex".into(),
+            first_line: 10,
+            last_line: 10,
+            last_revision: 1,
+            background_only: false,
+            shape: Some(shape),
+            text: String::new(),
+        };
+        let mut snapshot = vec![
+            span(1, UnitShape::Par),
+            span(2, UnitShape::Heading("section".into())),
+            span(3, UnitShape::Heading("subsection".into())),
+        ];
+        let unit = |kind: &str, name: Option<&str>| CapturedUnit {
+            kind: kind.into(),
+            name: name.map(str::to_owned),
+            begin_line: 10,
+            end_line: Some(10),
+            ..Default::default()
+        };
+        let par = unit("par", None);
+        let section = unit("heading", Some("section"));
+        let subsection = unit("heading", Some("subsection"));
+        assert_eq!(source_span(&par, "main.tex", &snapshot), Some(ParaId(1)));
+        assert_eq!(
+            source_span(&section, "main.tex", &snapshot),
+            Some(ParaId(2))
+        );
+        assert_eq!(
+            source_span(&subsection, "main.tex", &snapshot),
+            Some(ParaId(3))
+        );
+
+        snapshot.push(span(4, UnitShape::Heading("section".into())));
+        assert_eq!(source_span(&section, "main.tex", &snapshot), None);
+        assert_eq!(source_span(&par, "main.tex", &snapshot), Some(ParaId(1)));
+    }
 
     #[test]
     fn unchanged_pages_keep_their_list() {

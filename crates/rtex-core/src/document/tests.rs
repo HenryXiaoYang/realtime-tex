@@ -373,6 +373,57 @@ fn heading_and_environment_splits() {
 }
 
 #[test]
+fn compact_heading_boundaries_survive_incremental_edits() {
+    let text = r"\documentclass{article}
+\begin{document}
+First.
+
+\section{A}
+Before \verb|\section{literal}| \sectionmark{mark}.
+{A group
+with \section{Inside the group}}
+\begin{quote}
+\verb|\end{quote}|\section{Still inside the quote}
+\begin{equation} x \end{equation}\section{Inside the quote}
+\end{quote}
+\section{B}\subsection{C}
+After.
+\end{document}
+";
+    let mut ids = IdAllocator(0);
+    let mut fb = FileBuf::new(text, &mut ids, 1);
+    assert_eq!(fb.spans.len(), 8);
+    let ids_before: Vec<_> = fb.spans.iter().map(|span| span.id).collect();
+    let start = text.find("\\end{quote}\n").unwrap() + "\\end{quote}".len();
+    fb.apply(
+        &Edit {
+            start_byte: start,
+            end_byte: start + 1,
+            text: String::new(),
+        },
+        &mut ids,
+        2,
+    );
+    assert_eq!(
+        fb.spans
+            .iter()
+            .map(|span| (span.range.clone(), span.kind))
+            .collect::<Vec<_>>(),
+        segment(&fb.text, &fb.rules)
+    );
+    assert_eq!(
+        fb.spans
+            .iter()
+            .map(|span| fb.text[span.range.clone()].trim_end())
+            .skip(4)
+            .take(3)
+            .collect::<Vec<_>>(),
+        [r"\section{B}", r"\subsection{C}", "After."]
+    );
+    assert_eq!(fb.spans[5].id, ids_before[5]);
+}
+
+#[test]
 fn run_in_heading_keeps_the_paragraph_that_sets_its_title() {
     let body = "\\paragraph{Same line.} Text.\n\n\\paragraph{Apart.}\n\\label{a} % note\n\nTitle text\nhere.\n\n\
                 Next.\n\n\\paragraph*{List.}\n\\begin{itemize}\n\\item a\n\\end{itemize}\nAfter.\n\n\
