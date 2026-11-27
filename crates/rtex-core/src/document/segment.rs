@@ -183,6 +183,11 @@ pub(super) fn segment_body(
             let Some(line) = lines.next() else { break };
             remaining = line;
         }
+        if env_stack.is_empty() && remaining.trim().is_empty() {
+            // a blank line ends any group the scan still counts open: an argument cannot hold a
+            // \par, so the count went wrong (`%` read as a comment inside \url{...})
+            group_depth = 0;
+        }
         let outer = group_depth == 0 && env_stack.is_empty();
         let (cut, depth, commands) = scan_line(remaining, &env_stack, group_depth);
         group_depth = depth;

@@ -541,3 +541,27 @@ fn preamble_edit_flagged() {
     );
     assert!(out.preamble_changed);
 }
+
+#[test]
+fn a_brace_the_scan_cannot_close_ends_at_a_blank_line() {
+    // `%` inside \url{...} is not a comment to TeX, but the scan reads it as one and never sees
+    // the closing brace: the paragraphs after it must still be spans of their own
+    for line in [
+        "See \\url{http://a.org/x%20y} here.",
+        "See \\href{http://a.org/x%20y}{a} here.",
+        "Code \\lstinline|f{| here.",
+    ] {
+        let text = format!(
+            "\\documentclass{{article}}\n\\begin{{document}}\n{line}\n\nSecond.\n\nThird.\n\\end{{document}}\n"
+        );
+        let mut ids = IdAllocator(0);
+        let fb = FileBuf::new(&text, &mut ids, 1);
+        let bodies: Vec<_> = fb
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::Body)
+            .map(|s| fb.text[s.range.clone()].trim())
+            .collect();
+        assert_eq!(bodies, [line, "Second.", "Third."], "{line}");
+    }
+}
