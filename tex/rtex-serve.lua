@@ -9,6 +9,7 @@ local json = dofile(kpse.find_file("rtex-json.lua", "lua") or "rtex-json.lua")
 local dl = dofile(kpse.find_file("rtex-dl.lua", "lua") or "rtex-dl.lua")
 local dlbin = dofile(kpse.find_file("rtex-dl-bin.lua", "lua") or "rtex-dl-bin.lua")
 local P = dofile(kpse.find_file("rtex-pic.lua", "lua") or "rtex-pic.lua")
+local counters = dofile(kpse.find_file("rtex-counters.lua", "lua") or "rtex-counters.lua")
 local gettime = os.gettimeofday
 local pack, format, floor = string.pack, string.format, math.floor
 local find, match, sub = string.find, string.match, string.sub
@@ -511,9 +512,9 @@ function S.init(boxnum, countnum, cctnum)
   tex.print(cctnum, "\\newbox\\rtex@floatbox ")
   tex.print(cctnum, "\\def\\rtex@picns{rtex_serve}\\def\\rtex@picenvs{" .. table.concat(P.PICTURE_ENVS, ",") ..
             "}\\input{rtex-pic.tex}\\rtex@wrappicall ")
-  -- LaTeX counters: idle values restored after every compile
-  local ck = token.get_macro("cl@@ckpt") or ""
-  for name in ck:gmatch("\\@elt%s*{([^}]*)}") do
+  -- LaTeX counters, and count registers named like them (rtex-counters.lua): idle values
+  -- restored after every compile
+  for _, name in ipairs(counters.names()) do
     local ok, v = pcall(getcount, "c@" .. name)
     if ok then
       S.counter_names[#S.counter_names + 1] = name; S.counter_base[name] = v

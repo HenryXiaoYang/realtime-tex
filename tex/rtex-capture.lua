@@ -11,6 +11,7 @@ local json = dofile(kpse.find_file("rtex-json.lua", "lua") or "rtex-json.lua")
 local dl = dofile(kpse.find_file("rtex-dl.lua", "lua") or "rtex-dl.lua")
 -- picture cache mechanics shared with the live server (rtex-pic.lua, rtex-pic.tex)
 local P = dofile(kpse.find_file("rtex-pic.lua", "lua") or "rtex-pic.lua")
+local counters = dofile(kpse.find_file("rtex-counters.lua", "lua") or "rtex-counters.lua")
 
 local INT_PARAMS = { "looseness", "tolerance", "pretolerance", "hyphenpenalty", "exhyphenpenalty",
   "adjdemerits", "doublehyphendemerits", "finalhyphendemerits", "linepenalty", "lastlinefit",
@@ -46,7 +47,8 @@ end
 -- reassigned here and in C.begin_document, which is why this section stays in this file: a
 -- sibling file would get them by value.
 
--- LaTeX counters (from \cl@@ckpt, the \include checkpoint list every \newcounter extends).
+-- LaTeX counters (\cl@@ckpt, the \include checkpoint list every \newcounter extends) and count
+-- registers named like them (rtex-counters.lua).
 local counter_names = {}
 local function read_counters()
   local v = {}
@@ -201,8 +203,7 @@ function C.set_cct(n) C.cct = n; C.picctl = P.new(n) end
 C.PICTURE_ENVS = P.PICTURE_ENVS
 
 function C.begin_document()
-  local ck = macro("cl@@ckpt") or ""
-  for n in ck:gmatch("\\@elt%s*{([^}]*)}") do counter_names[#counter_names + 1] = n end
+  counter_names = counters.names()
   prev_counters = {}
   prev_thefmt = {}
   prev_macros = {}
