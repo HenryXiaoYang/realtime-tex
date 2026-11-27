@@ -1857,3 +1857,35 @@ fn a_leaking_title_page_does_not_restart_the_engine_in_a_loop() {
     assert!(starts <= 2, "the engine restarted {starts} times");
     s.close();
 }
+
+/// A warm-up compile that kills the server (here `\textsc`, which only the warm-up text uses,
+/// hits LuaTeX's fatal 100-error limit) restarts the engine once; the restart's pass must not warm
+/// it again, or the engine restarts after every pass, forever (#54).
+#[test]
+fn a_crashing_warm_up_does_not_restart_the_engine_in_a_loop() {
+    if rtex_core::texlive::TexLive::discover().is_err() {
+        eprintln!("SKIP: no lualatex");
+        return;
+    }
+    let root = std::env::temp_dir().join(format!("rtex-session-{}-warmcrash", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("main.tex"),
+        "\\documentclass{article}\n\\renewcommand\\textsc[1]{\\count255=0 \\loop\\undefinedmacro\\advance\\count255 by 1 \\ifnum\\count255<200 \\repeat}\n\\begin{document}\nHello world, this is a plain paragraph.\n\\end{document}\n",
+    )
+    .unwrap();
+    let mut cfg = SessionConfig::new(&project, "main.tex");
+    cfg.build_dir = root.join("build");
+    cfg.debounce = Duration::from_millis(50);
+    let s = Session::open(cfg).unwrap();
+    // the first start and one restart for the crashed warm-up; the loop restarted twice a second
+    let (_, events) = s.wait_for(Duration::from_secs(20), |_| false);
+    let starts = events
+        .iter()
+        .filter(|e| matches!(e, Event::EngineState { state, .. } if state == "Starting"))
+        .count();
+    assert!(starts <= 2, "the engine restarted {starts} times");
+    s.close();
+}

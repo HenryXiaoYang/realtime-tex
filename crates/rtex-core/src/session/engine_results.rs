@@ -82,7 +82,11 @@ pub(super) fn engine_failed(
     // clean pass (or, after a few crashes, until the preamble changes): retrying the text that
     // hung or crashed the engine would kill the server on every keystroke
     s.bg_signal.0.send(BgCmd::Pass).ok();
-    if !req.warmup {
+    if req.warmup {
+        // the warm-up text (the unit plus font variants and math) killed the engine, not an edit:
+        // stop warming until the preamble changes, or the restart's pass warms it again (#54)
+        s.live.lock().warmup_failed = true;
+    } else {
         s.live
             .lock()
             .quarantine(req.par_id, req.span_hash, req.versions.source_revision);

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A warm-up compile that kills the live engine (a command in the warm-up text hits LuaTeX's
+  100-error limit, as luatexja does with a CJK font it cannot load) restarted the engine after
+  every pass, forever. After one such crash rtex stops warming the engine until the preamble
+  changes (#54).
+
 ## 0.0.8 (2026-11-22)
 
 ### Fixed

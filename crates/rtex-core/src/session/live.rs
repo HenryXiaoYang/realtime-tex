@@ -87,16 +87,21 @@ impl LiveUnit {
 
 /// The live records of all spans (one mutex in `Shared`; take it for short, non-nested scopes).
 #[derive(Debug, Default)]
-pub(super) struct LiveUnits(HashMap<ParaId, LiveUnit>);
+pub(super) struct LiveUnits {
+    units: HashMap<ParaId, LiveUnit>,
+    /// A warm-up compile hung or crashed the engine (until the preamble changes): warming it
+    /// again after the restart's pass would restart it again, forever.
+    pub warmup_failed: bool,
+}
 
 impl LiveUnits {
     pub fn get(&self, id: ParaId) -> Option<&LiveUnit> {
-        self.0.get(&id)
+        self.units.get(&id)
     }
 
     /// The record of `id`, created empty when there is none.
     pub fn unit(&mut self, id: ParaId) -> &mut LiveUnit {
-        self.0.entry(id).or_default()
+        self.units.entry(id).or_default()
     }
 
     /// The probe verdict of `id` for layout `lv`.
@@ -133,7 +138,7 @@ impl LiveUnits {
     /// A pass of source revision `revision` compiled without errors: crashes at that revision
     /// or before no longer taint the state the live engine starts from.
     pub fn on_clean_pass(&mut self, revision: Revision) {
-        for u in self.0.values_mut() {
+        for u in self.units.values_mut() {
             if let Some(c) = u.crash.as_mut().filter(|c| c.revision <= revision) {
                 c.clean_pass = true;
             }
@@ -142,7 +147,7 @@ impl LiveUnits {
 
     /// The live engine typeset `id`: its earlier crashes no longer count as crashes in a row.
     pub fn forget_crashes(&mut self, id: ParaId) {
-        if let Some(u) = self.0.get_mut(&id) {
+        if let Some(u) = self.units.get_mut(&id) {
             u.crash = None;
         }
     }
@@ -154,7 +159,7 @@ impl LiveUnits {
     /// the clean pass, the live engine would start the unit from state the broken text left
     /// behind and could crash again.
     pub fn lift_quarantine_if_edited(&mut self, id: ParaId, hash: u64) {
-        if let Some(u) = self.0.get_mut(&id) {
+        if let Some(u) = self.units.get_mut(&id) {
             let quarantined = u.over_budget.is_some_and(|(v, _)| v == QUARANTINED);
             if quarantined
                 && u.crash
@@ -173,7 +178,7 @@ impl LiveUnits {
     /// A layout was installed (version `lv`): the pass's placements and contexts supersede what
     /// the live path guessed, and facts tagged with an older layout no longer apply.
     pub fn on_new_layout(&mut self, lv: u64) {
-        for u in self.0.values_mut() {
+        for u in self.units.values_mut() {
             u.derived = None;
             u.rows = None;
             u.place = None;
@@ -196,7 +201,7 @@ impl LiveUnits {
     /// The running server was replaced by one with the same preamble and newer bibliography
     /// data: probe verdicts compared that server's output, the rest still holds.
     pub fn on_server_swap(&mut self) {
-        for u in self.0.values_mut() {
+        for u in self.units.values_mut() {
             u.probe = None;
         }
     }
@@ -204,17 +209,18 @@ impl LiveUnits {
     /// The preamble changed: the engine restarts, so verdicts, budget marks, quarantines and
     /// leaks about the old engine no longer apply.
     pub fn on_preamble_change(&mut self) {
-        for u in self.0.values_mut() {
+        for u in self.units.values_mut() {
             u.probe = None;
             u.over_budget = None;
             u.leak = None;
             u.crash = None;
         }
+        self.warmup_failed = false;
         self.prune();
     }
 
     fn prune(&mut self) {
-        self.0.retain(|_, u| !u.is_empty());
+        self.units.retain(|_, u| !u.is_empty());
     }
 }
 
@@ -304,5 +310,18 @@ mod tests {
         assert!(quarantined(&l));
         l.on_preamble_change();
         assert!(l.get(a).is_none());
+    }
+
+    #[test]
+    fn warmup_failure_lasts_until_the_preamble_changes() {
+        let mut l = LiveUnits {
+            warmup_failed: true,
+            ..Default::default()
+        };
+        l.on_new_layout(3);
+        l.on_clean_pass(9);
+        assert!(l.warmup_failed);
+        l.on_preamble_change();
+        assert!(!l.warmup_failed);
     }
 }
