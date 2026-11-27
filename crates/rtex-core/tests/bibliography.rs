@@ -360,3 +360,61 @@ fn a_main_file_in_a_subfolder_reads_paths_relative_to_its_own_folder() {
     let bbl = std::fs::read_to_string(pass.join("sop.bbl")).unwrap_or_default();
     assert!(bbl.contains("Knuth"), "no bibliography: {bbl:?}");
 }
+
+#[test]
+fn a_subfile_is_read_from_the_copy_and_its_units_have_source_spans() {
+    // subfiles loads with \subimport, which tries the \input@path entries before the bare name:
+    // the real project folder there made TeX read the saved file (not the editor's text) and
+    // report it by its absolute path, so no unit of the subfile had a span (plugin #40)
+    if std::process::Command::new("kpsewhich")
+        .arg("subfiles.sty")
+        .output()
+        .map_or(true, |o| o.stdout.is_empty())
+    {
+        eprintln!("SKIP: no subfiles.sty");
+        return;
+    }
+    let main = "\\documentclass{article}\n\\usepackage{subfiles}\n\\begin{document}\n\
+                A paragraph of the main file.\n\n\\subfile{body/one}\n\\end{document}\n";
+    let one = "\\documentclass[../main.tex]{subfiles}\n\\begin{document}\n\
+               A paragraph of the subfile.\n\\end{document}\n";
+    let Some((s, _project, _)) = session("subfiles", &[("main.tex", main), ("body/one.tex", one)])
+    else {
+        return;
+    };
+    let in_subfile = |s: &Session| -> Vec<_> {
+        s.layout_units()
+            .into_iter()
+            .filter(|u| u.file.as_deref().is_some_and(|f| f.ends_with("one.tex")))
+            .collect()
+    };
+    wait_converged(&s);
+    let units = in_subfile(&s);
+    assert_eq!(units.len(), 1, "{units:?}");
+    assert!(
+        units
+            .iter()
+            .all(|u| u.file.as_deref() == Some("./body/one.tex") && u.span.is_some()),
+        "{units:?}"
+    );
+    // an unsaved edit of the subfile reaches the full compile
+    let at = one.find("subfile.").unwrap() + "subfile.".len();
+    s.apply_edit(
+        "body/one.tex",
+        Edit {
+            start_byte: at,
+            end_byte: at,
+            text: "\n\nA paragraph typed in the editor.".into(),
+        },
+    )
+    .unwrap();
+    let t0 = std::time::Instant::now();
+    while in_subfile(&s).len() < 2 && t0.elapsed() < Duration::from_secs(180) {
+        let _ = s.wait_for(Duration::from_secs(5), |e| {
+            matches!(e, Event::LayoutUpdate { .. })
+        });
+    }
+    let units = in_subfile(&s);
+    assert_eq!(units.len(), 2, "{units:?}");
+    assert!(units.iter().all(|u| u.span.is_some()), "{units:?}");
+}
