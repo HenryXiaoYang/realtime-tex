@@ -8,6 +8,10 @@
   100-error limit, as luatexja does with a CJK font it cannot load) restarted the engine after
   every pass, forever. After one such crash rtex stops warming the engine until the preamble
   changes (#54).
+- Count registers named like counters but made with `\newcount\c@name` (ltmermaid's diagram
+  number) are replayed and restored by the live engine like LaTeX counters: each live compile
+  advanced them, so ltmermaid rendered every diagram again on each keystroke under a new name
+  (#57, by Steve-Li-1998).
 
 ### Documentation
 
