@@ -361,8 +361,12 @@ fn warm_engine(s: &Shared, rev: Revision, eligible_strict: &[ParaId]) {
     // the first real keystroke (never an unprobed unit: it could leak state). Skip a unit whose
     // compile already leaked (\maketitle in title-page mode redefines \maketitle): warming it
     // again restarts the engine and schedules a pass, whose layout would warm it again, forever.
+    // The same goes for any warm-up that hung or crashed the engine (`warmup_failed`).
     let warm_id = {
         let live = s.live.lock();
+        if live.warmup_failed {
+            return;
+        }
         eligible_strict
             .iter()
             .copied()
