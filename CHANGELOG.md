@@ -15,6 +15,10 @@
 - A paragraph ending in a block environment with a heading right on the next line
   (`\end{equation}` then `\section{B}`, no blank line) goes live again: the paragraph and the
   heading were mapped to the same span, so edits to it went to a full compile (#53, by dfshfghj).
+- Files loaded with the subfiles or import package (`\subfile`, `\subimport`) are read from the
+  session's copy of the project: TeX read the saved file from the real project folder instead,
+  so the editor's unsaved text of a subfile never reached the full compile, and its paragraphs
+  had no source position, so the preview could not follow the cursor there (plugin #40).
 
 ### Documentation
 

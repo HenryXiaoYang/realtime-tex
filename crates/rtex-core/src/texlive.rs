@@ -26,12 +26,15 @@ pub struct TexLive {
 /// as `latexmk -cd` would (`lualatex_cmd` also puts the folder on `TEXINPUTS` ahead of `.`, so
 /// a same-named file at the top does not win); passes run in a copy of the project, so a path
 /// that leaves it (`\input{../shared/x}`, `\graphicspath{{../figures/}}`) would miss. `\input`,
-/// `\IfFileExists` retry a name not found under each `\input@path` entry. graphicx searches
+/// `\IfFileExists` retry a name not found under each `\input@path` entry; the import package
+/// (`\subimport`, `\subfile`) tries the entries first, so the copy (`./`) goes before the real
+/// folders, or TeX would read the saved file instead of the editor's text and report it by its
+/// absolute path, which matches no source span (plugin #40). graphicx searches
 /// its `\graphicspath` list instead, so at `\begin{document}` the main file's folder and a copy
 /// of each relative entry under it go first, and copies under the real folders last. (No `%`,
 /// `#` or `~` here: this is read as TeX.)
 pub const INPUT_PATH_HOOK: &str = concat!(
-    r#"\directlua{local d=os.getenv("RTEX_PROJECT_DIR") local m=os.getenv("RTEX_MAIN_DIR") local p="" if m then p="{"..m.."/}" if d then p=p.."{"..d.."/"..m.."/}" end end if d then p=p.."{"..d.."/}" end if p=="" then else token.set_macro("input@path",p) end}"#,
+    r#"\directlua{local d=os.getenv("RTEX_PROJECT_DIR") local m=os.getenv("RTEX_MAIN_DIR") local p="" if m then p="{"..m.."/}" end if d then p=p.."{./}" if m then p=p.."{"..d.."/"..m.."/}" end p=p.."{"..d.."/}" end if p=="" then else token.set_macro("input@path",p) end}"#,
     r#"\AddToHook{begindocument/before}{\directlua{local d=os.getenv("RTEX_PROJECT_DIR") local m=os.getenv("RTEX_MAIN_DIR") local g=token.get_macro("Ginput@path") if g and (d or m) then local pre,post="","" if m then pre="{"..m.."/}" end for e in g:gmatch("{(.-)}") do if not (e:match("^/") or e:match("^[A-Za-z]:")) then if m then pre=pre.."{"..m.."/"..e.."}" if d then post=post.."{"..d.."/"..m.."/"..e.."}" end end if d then post=post.."{"..d.."/"..e.."}" end end end token.set_macro("Ginput@path",pre..g..post) end}}"#
 );
 
