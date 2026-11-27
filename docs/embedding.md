@@ -189,8 +189,15 @@ contains it. Keep the newer ones and move them to the new `placements`.
 |---|---|
 | `BackgroundScheduled { par_id, reasons }` | this edit will appear with the next pass, not live. `reasons` is human-readable ("unverified: …", "last fast compile took 63 ms, over the budget"). |
 | `Diagnostics { source, items }` | errors and warnings with file, line, message and the offending source line, from a pass or the live engine. Each event replaces the earlier `items` of its `source`; an empty list clears it. Every finished pass sends `background` (empty when clean). A live-engine failure is reported as `fast:ParaId(n)` and withdrawn (empty `items`) by the first layout of the failing revision or a later one. |
-| `EngineState { engine_generation, state, reason }` | the live engine is `Starting`, `Ready`, `Restarting` or has `Failed`. Status bar material. |
+| `EngineState { engine_generation, state, reason }` | the live engine is `Starting`, `Ready`, `Restarting` or has `Failed`. Status bar material. Not ordered with `LayoutUpdate`: see below. |
 | `PdfExported { job_id, path, status, converged, passes }` | an export finished. Only `converged: true` promises the same PDF as a clean LuaLaTeX build. |
+
+The live engine and the background passes run on threads of their own, so `EngineState` and
+`LayoutUpdate` arrive in either order: the first layout (even a `Failed` one) can come before the
+engine's first `Ready`. Don't infer that a pass is still running from `Ready` without a layout.
+Track the two streams separately. The first pass starts when the session opens and ends with a
+`LayoutUpdate` whatever happens (`compile` is `Ok`, `CompiledWithErrors` or `Failed`): until the
+first `LayoutUpdate` arrives, it is still running.
 
 ## Drawing display lists
 

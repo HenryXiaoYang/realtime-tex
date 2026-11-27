@@ -9,6 +9,11 @@
   every pass, forever. After one such crash rtex stops warming the engine until the preamble
   changes (#54).
 
+### Documentation
+
+- `EngineState` and `LayoutUpdate` are not ordered: the first layout can arrive before the
+  engine's first `Ready` (#55).
+
 ## 0.0.8 (2026-11-22)
 
 ### Fixed
